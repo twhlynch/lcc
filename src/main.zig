@@ -2,6 +2,9 @@
 
 const std = @import("std");
 
+const compiler = @import("compiler.zig");
+const elk = compiler.elk;
+
 const usage =
     \\Usage: lcc [options] <input.asm>
     \\
@@ -78,8 +81,59 @@ fn parseArgs(
     return .{ .run = options };
 }
 
+const Diagnostics = struct {
+    stderr_buffer: [1024]u8 = undefined,
+    stderr_writer: std.Io.File.Writer = undefined,
+    fancy_sink: elk.reporting.Sink.Fancy = undefined,
+    reporter: elk.reporting.Primary = undefined,
+
+    fn init(diags: *Diagnostics, io: std.Io) void {
+        diags.stderr_writer = std.Io.File.stderr().writer(io, &diags.stderr_buffer);
+        diags.fancy_sink = .new(&diags.stderr_writer.interface);
+        diags.reporter = .new(diags.fancy_sink.interface());
+    }
+
+    fn summarize(diags: *Diagnostics) void {
+        diags.reporter.summarize();
+    }
+};
+
+fn compile(
+    io: std.Io,
+    gpa: std.mem.Allocator,
+    options: Options,
+    diags: *Diagnostics,
+) (error{CompileFailed} || compiler.Error)!compiler.Program {
+    return compiler.assembleFile(io, gpa, options.input.?, &diags.reporter) catch |err| switch (err) {
+        error.AssemblyFailed => {
+            diags.summarize();
+            return error.CompileFailed;
+        },
+        error.FileNotFound => {
+            std.log.err("file not found: {s}", .{options.input.?});
+            return error.CompileFailed;
+        },
+        else => |other| return other,
+    };
+}
+
+fn printSummary(
+    out: *std.Io.Writer,
+    program: *const compiler.Program,
+) std.Io.Writer.Error!void {
+    try out.print(
+        "Assembled {} words at origin x{X:04} ({} labels)\n",
+        .{
+            program.air.lines.items.len,
+            program.air.origin,
+            program.air.labels.items.len,
+        },
+    );
+}
+
 pub fn main(init: std.process.Init) !u8 {
     const io = init.io;
+    const gpa = init.gpa;
 
     var stdout_buffer: [1024]u8 = undefined;
     var stdout_writer = std.Io.File.stdout().writer(io, &stdout_buffer);
@@ -97,7 +151,20 @@ pub fn main(init: std.process.Init) !u8 {
         .help => return 0,
         .run => |options| options,
     };
-    _ = options;
+
+    var diags: Diagnostics = undefined;
+    diags.init(io);
+
+    var program = compile(io, gpa, options, &diags) catch {
+        try out.flush();
+        return 1;
+    };
+    defer program.deinit(gpa);
+
+    try printSummary(out, &program);
+
+    diags.summarize();
+    try out.flush();
 
     return 0;
 }
