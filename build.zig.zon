@@ -1,0 +1,20 @@
+.{
+    .name = .lcc,
+    .version = "0.0.0",
+    .fingerprint = 0x24e7e3d0067bc15d,
+
+    .minimum_zig_version = "0.16.0",
+
+    .dependencies = .{
+        .elk = .{
+            .url = "git+https://github.com/dxrcy/elk?ref=v0.1.5#4df34d8c2e8497e45d36ca8e970165a8d5aadfd8",
+            .hash = "elk-0.1.5-_Fml5IIyBACQzvAgYxIx4ZJL7WsbQuRZmPe8aYHacCT8",
+        },
+    },
+
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "src",
+    },
+}
