@@ -67,6 +67,7 @@ const obj_scratch_path = ".lcc-tmp.o";
 
 pub const CompileError = error{
     UnsupportedInstruction,
+    InvalidTarget,
     InvalidModule,
     UnknownTriple,
     EmissionFailed,

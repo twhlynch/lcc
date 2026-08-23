@@ -29,6 +29,64 @@ pub const Builder = struct {
         return bindings.LLVMBuildRet(builder.ref, value);
     }
 
+    pub fn buildBr(builder: Builder, dest: bindings.BasicBlockRef) bindings.ValueRef {
+        return bindings.LLVMBuildBr(builder.ref, dest);
+    }
+
+    pub fn buildCondBr(
+        builder: Builder,
+        condition: bindings.ValueRef,
+        then_block: bindings.BasicBlockRef,
+        else_block: bindings.BasicBlockRef,
+    ) bindings.ValueRef {
+        return bindings.LLVMBuildCondBr(builder.ref, condition, then_block, else_block);
+    }
+
+    /// builds a switch with case_count cases plus default
+    pub fn buildSwitch(
+        builder: Builder,
+        value: bindings.ValueRef,
+        default: bindings.BasicBlockRef,
+        case_count: usize,
+    ) bindings.ValueRef {
+        return bindings.LLVMBuildSwitch(builder.ref, value, default, @intCast(case_count));
+    }
+
+    pub fn addCase(switch_inst: bindings.ValueRef, on: bindings.ValueRef, dest: bindings.BasicBlockRef) void {
+        bindings.LLVMAddCase(switch_inst, on, dest);
+    }
+
+    pub fn buildUnreachable(builder: Builder) bindings.ValueRef {
+        return bindings.LLVMBuildUnreachable(builder.ref);
+    }
+
+    pub fn buildAlloca(builder: Builder, ty: bindings.TypeRef, name: []const u8) bindings.ValueRef {
+        var buffer: [32]u8 = undefined;
+        return bindings.LLVMBuildAlloca(builder.ref, ty, nameZ(&buffer, name));
+    }
+
+    pub fn buildLoad(builder: Builder, ty: bindings.TypeRef, pointer: bindings.ValueRef, name: []const u8) bindings.ValueRef {
+        var buffer: [32]u8 = undefined;
+        return bindings.LLVMBuildLoad2(builder.ref, ty, pointer, nameZ(&buffer, name));
+    }
+
+    pub fn buildStore(builder: Builder, value: bindings.ValueRef, pointer: bindings.ValueRef) bindings.ValueRef {
+        return bindings.LLVMBuildStore(builder.ref, value, pointer);
+    }
+
+    /// word-indexed gep into an i16 array
+    /// zero-extends the 16-bit address so values at or above x8000 stay positive
+    pub fn buildMemoryAddress(
+        builder: Builder,
+        base: bindings.ValueRef,
+        index: bindings.ValueRef,
+    ) bindings.ValueRef {
+        const i16ty = @import("type.zig").int16(builder.context);
+        const wide = builder.buildZExtToInt32(index, "addr");
+        var indices = [1]bindings.ValueRef{wide};
+        return bindings.LLVMBuildGEP2(builder.ref, i16ty, base, &indices, 1, "ptr");
+    }
+
     pub fn buildAdd(builder: Builder, lhs: bindings.ValueRef, rhs: bindings.ValueRef, name: []const u8) bindings.ValueRef {
         var buffer: [32]u8 = undefined;
         return bindings.LLVMBuildAdd(builder.ref, lhs, rhs, nameZ(&buffer, name));
@@ -37,6 +95,11 @@ pub const Builder = struct {
     pub fn buildAnd(builder: Builder, lhs: bindings.ValueRef, rhs: bindings.ValueRef, name: []const u8) bindings.ValueRef {
         var buffer: [32]u8 = undefined;
         return bindings.LLVMBuildAnd(builder.ref, lhs, rhs, nameZ(&buffer, name));
+    }
+
+    pub fn buildOr(builder: Builder, lhs: bindings.ValueRef, rhs: bindings.ValueRef, name: []const u8) bindings.ValueRef {
+        var buffer: [32]u8 = undefined;
+        return bindings.LLVMBuildOr(builder.ref, lhs, rhs, nameZ(&buffer, name));
     }
 
     pub fn buildXor(builder: Builder, lhs: bindings.ValueRef, rhs: bindings.ValueRef, name: []const u8) bindings.ValueRef {

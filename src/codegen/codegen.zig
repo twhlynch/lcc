@@ -1,11 +1,10 @@
-//! LLVM code generation.
+//! LC-3 to LLVM code generation
 //!
-//! Consumes ELK's `Air` into the `@main` function of an LLVM module
-//!
-//! Machine model:
-//!    - R0-R7 are i16 SSA values tracked per register
-//!    - the condition code is carried as signed-compare predicates
-//!    - PC is represented through LLVM control flow
+//! one basic block per LC-3 word, plus an exit block and a shared dispatch
+//! block for indirect jumps. R0-R7 and the condition code live in stack slots
+//! so values merge correctly across block boundaries. data words are stored
+//! into memory before execution starts; executing one traps. instructions
+//! are never fetched from memory, so no self-modifying code.
 
 const std = @import("std");
 
@@ -14,7 +13,11 @@ const llvm = @import("../llvmc/root.zig");
 const bindings = llvm.bindings;
 pub const instruction = @import("instruction.zig");
 
-pub const Error = error{UnsupportedInstruction};
+pub const Error = error{
+    UnsupportedInstruction,
+    InvalidTarget,
+    OutOfMemory,
+};
 
 /// everything the pipeline keeps alive between stages
 /// owned by the caller
@@ -32,6 +35,7 @@ pub const CodeGen = struct {
     air: *const elk.Air,
     module: llvm.module.Module,
     builder: llvm.builder.Builder,
+    gpa: std.mem.Allocator,
 
     /// cached type handles.
     word_type: bindings.TypeRef,
@@ -39,47 +43,70 @@ pub const CodeGen = struct {
     /// the flat LC-3 address space
     memory_global: bindings.ValueRef,
 
-    /// current LLVM state of each LC-3 register
-    regs: [8]RegState,
-    /// predicates from the most recent register write
-    cc: CC = null,
+    /// stack slots for R0-R7, the condition code and the pending
+    /// indirect jump target
+    reg_slots: [8]bindings.ValueRef,
+    cc_slot: bindings.ValueRef,
+    dispatch_slot: bindings.ValueRef,
 
-    pub const RegState = union(enum) {
-        /// register content is a known constant
-        constant: i16,
-        /// register holds an SSA value
-        value: bindings.ValueRef,
-    };
+    /// one basic block per LC-3 word; blocks[len] is the exit block
+    blocks: []bindings.BasicBlockRef,
 
-    /// signed-compare predicates for the current condition code
-    pub const CC = ?struct {
-        n: bindings.ValueRef,
-        z: bindings.ValueRef,
-        p: bindings.ValueRef,
-    };
+    /// shared dispatch target for JMP/JSRR/RET
+    dispatch_block: bindings.BasicBlockRef,
 
     /// lowers a whole program into an LLVM module
     pub fn emit(
         air: *const elk.Air,
         gpa: std.mem.Allocator,
     ) Error!Output {
-        _ = gpa;
-
         const context = llvm.context.Context.create();
         var output: Output = .{ .context = context, .module = undefined };
         errdefer output.deinit();
 
         output.module = llvm.module.Module.create("lcc", context);
 
+        const line_count = air.lines.items.len;
+
+        var blocks = try gpa.alloc(bindings.BasicBlockRef, line_count + 1);
+        defer gpa.free(blocks);
+
         var cg: CodeGen = .{
             .air = air,
             .module = output.module,
             .builder = llvm.builder.Builder.create(context),
+            .gpa = gpa,
             .word_type = llvm.types.int16(context),
             .memory_global = undefined,
-            // all registers cleared
-            .regs = @splat(.{ .constant = 0 }),
+            .reg_slots = undefined,
+            .cc_slot = undefined,
+            .dispatch_slot = undefined,
+            .blocks = blocks.ptr[0 .. line_count + 1],
+            .dispatch_block = undefined,
         };
+
+        const main_fn = bindings.LLVMAddFunction(
+            output.module.ref,
+            "main",
+            llvm.types.function(llvm.types.int32(context)),
+        );
+
+        // entry block: slots, memory image, jump to word 0
+        const entry = bindings.LLVMAppendBasicBlockInContext(context.ref, main_fn, "entry");
+        cg.builder.positionAtEnd(entry);
+
+        inline for (0..8) |code| {
+            var name_buffer: [8]u8 = undefined;
+            const name = std.fmt.bufPrintZ(&name_buffer, "r{d}", .{code}) catch unreachable;
+            cg.reg_slots[code] =
+                bindings.LLVMBuildAlloca(cg.builder.ref, cg.word_type, name.ptr);
+        }
+        cg.cc_slot = cg.builder.buildAlloca(cg.word_type, "cc");
+        cg.dispatch_slot = cg.builder.buildAlloca(cg.word_type, "target");
+        // elk starts with all registers cleared; match it
+        const zero = llvm.value.constInt(cg.word_type, 0);
+        for (cg.reg_slots) |slot| _ = cg.builder.buildStore(zero, slot);
+        _ = cg.builder.buildStore(zero, cg.cc_slot);
 
         const memory_type = llvm.types.memoryArray(cg.word_type, 65536);
         cg.memory_global = bindings.LLVMAddGlobal(
@@ -89,50 +116,120 @@ pub const CodeGen = struct {
         );
         bindings.LLVMSetInitializer(cg.memory_global, llvm.value.constNull(memory_type));
 
-        const main_fn = bindings.LLVMAddFunction(
-            output.module.ref,
-            "main",
-            llvm.types.function(llvm.types.int32(context)),
-        );
-        const entry = bindings.LLVMAppendBasicBlockInContext(context.ref, main_fn, "entry");
-        cg.builder.positionAtEnd(entry);
-
-        for (air.lines.items) |line| {
+        // store all data words before execution starts
+        for (air.lines.items, 0..) |line, i| {
             switch (line.statement) {
-                // directives memory lowering (unimplemented)
-                .raw_word => return error.UnsupportedInstruction,
-                .instruction => |inst| try instruction.lower(&cg, inst),
+                .raw_word => |word| try cg.storeDataWord(i, word),
+                .instruction => {},
             }
         }
 
-        // R0 is the exit code
-        const r0 = cg.regValue(cg.regs[0]);
-        const widened = cg.builder.buildZExtToInt32(r0, "exit");
-        _ = cg.builder.buildRet(widened);
+        for (0..line_count) |i| {
+            var name_buffer: [16]u8 = undefined;
+            const name = std.fmt.bufPrintZ(&name_buffer, "w{d}", .{i}) catch unreachable;
+            cg.blocks[i] = bindings.LLVMAppendBasicBlockInContext(context.ref, main_fn, name.ptr);
+        }
+        cg.blocks[line_count] =
+            bindings.LLVMAppendBasicBlockInContext(context.ref, main_fn, "exit");
+        cg.dispatch_block =
+            bindings.LLVMAppendBasicBlockInContext(context.ref, main_fn, "dispatch");
+
+        _ = cg.builder.buildBr(cg.blocks[0]);
+
+        for (air.lines.items, 0..) |line, i| {
+            cg.builder.positionAtEnd(cg.blocks[i]);
+            switch (line.statement) {
+                .raw_word => {
+                    // executing a data word traps
+                    _ = cg.builder.buildUnreachable();
+                    continue;
+                },
+                .instruction => |inst| {
+                    const terminated = try instruction.lower(&cg, inst, i);
+                    // fall through unless the instruction ended its block
+                    if (!terminated) _ = cg.builder.buildBr(cg.blocks[i + 1]);
+                },
+            }
+        }
+
+        // exit block returns R0 as the process status
+        cg.builder.positionAtEnd(cg.blocks[line_count]);
+        const r0 = cg.loadReg(0);
+        const status = cg.builder.buildZExtToInt32(r0, "exit");
+        _ = cg.builder.buildRet(status);
+
+        // dispatch maps a pending indirect target onto its word's block
+        cg.builder.positionAtEnd(cg.dispatch_block);
+        const pending = cg.builder.buildLoad(cg.word_type, cg.dispatch_slot, "target");
+        const bad_target =
+            bindings.LLVMAppendBasicBlockInContext(context.ref, main_fn, "bad_target");
+        const switch_inst = cg.builder.buildSwitch(pending, bad_target, line_count);
+        for (0..line_count) |j| {
+            llvm.builder.Builder.addCase(
+                switch_inst,
+                llvm.value.constInt(cg.word_type, @intCast(air.origin + j)),
+                cg.blocks[j],
+            );
+        }
+        cg.builder.positionAtEnd(bad_target);
+        _ = cg.builder.buildUnreachable();
 
         return output;
     }
 
-    /// the LLVM value for a registers current state
-    pub fn regValue(cg: *CodeGen, state: RegState) bindings.ValueRef {
-        return switch (state) {
-            .constant => |c| llvm.value.constInt(cg.word_type, c),
-            .value => |v| v,
-        };
+    /// stores one data word at its address
+    fn storeDataWord(cg: *CodeGen, index: usize, word: u16) Error!void {
+        const address = llvm.value.constInt(
+            cg.word_type,
+            @intCast(cg.air.origin + index),
+        );
+        const pointer = cg.builder.buildMemoryAddress(cg.memory_global, address);
+        _ = cg.builder.buildStore(llvm.value.constInt(cg.word_type, word), pointer);
     }
 
-    pub fn setReg(cg: *CodeGen, code: u3, state: RegState) void {
-        cg.regs[code] = state;
-        cg.cc = null; // stale until updated by a register write
+    /// LC-3 value of PC while executing word index
+    pub fn pcValue(cg: *CodeGen, index: usize) bindings.ValueRef {
+        return llvm.value.constInt(
+            cg.word_type,
+            @as(i64, cg.air.origin) + @as(i64, @intCast(index)) + 1,
+        );
     }
 
-    /// emits signed-compare predicates for a freshly written register and
-    /// records them as the machine's condition code
-    pub fn updateCc(cg: *CodeGen, result: bindings.ValueRef) void {
-        const n = cg.builder.buildIcmpZero(.slt, result, "cc.n");
-        const z = cg.builder.buildIcmpZero(.eq, result, "cc.z");
-        const p = cg.builder.buildIcmpZero(.sgt, result, "cc.p");
+    pub fn loadReg(cg: *CodeGen, code: u3) bindings.ValueRef {
+        return cg.builder.buildLoad(cg.word_type, cg.reg_slots[code], "v");
+    }
 
-        cg.cc = .{ .n = n, .z = z, .p = p };
+    /// writes a register and sets the condition codes
+    pub fn writeReg(cg: *CodeGen, code: u3, value: bindings.ValueRef) void {
+        _ = cg.builder.buildStore(value, cg.reg_slots[code]);
+        _ = cg.builder.buildStore(value, cg.cc_slot);
+    }
+
+    /// writes a register without touching the condition codes
+    pub fn writeRegNoCc(cg: *CodeGen, code: u3, value: bindings.ValueRef) void {
+        _ = cg.builder.buildStore(value, cg.reg_slots[code]);
+    }
+
+    /// loads the current condition-code value
+    pub fn loadCc(cg: *CodeGen) bindings.ValueRef {
+        return cg.builder.buildLoad(cg.word_type, cg.cc_slot, "cc");
+    }
+
+    /// word pointer for an arbitrary runtime address
+    pub fn memoryPointer(cg: *CodeGen, address: bindings.ValueRef) bindings.ValueRef {
+        return cg.builder.buildMemoryAddress(cg.memory_global, address);
+    }
+
+    /// branches to the dispatch block with target as the pending address
+    pub fn dispatchTo(cg: *CodeGen, target: bindings.ValueRef) void {
+        _ = cg.builder.buildStore(target, cg.dispatch_slot);
+        _ = cg.builder.buildBr(cg.dispatch_block);
+    }
+
+    /// validates a PC-relative target against the program bounds
+    pub fn branchTargetIndex(cg: *CodeGen, index: usize, offset: i64) Error!usize {
+        const target = @as(i64, @intCast(index)) + 1 + offset;
+        if (target < 0 or target > cg.air.lines.items.len) return error.InvalidTarget;
+        return @intCast(target);
     }
 };

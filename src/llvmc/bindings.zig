@@ -95,8 +95,18 @@ pub extern fn LLVMAppendBasicBlockInContext(C: ContextRef, Fn: ValueRef, Name: [
 pub extern fn LLVMCreateBuilderInContext(C: ContextRef) BuilderRef;
 pub extern fn LLVMPositionBuilderAtEnd(Builder: BuilderRef, Block: BasicBlockRef) void;
 pub extern fn LLVMBuildRet(Builder: BuilderRef, V: ValueRef) ValueRef;
+pub extern fn LLVMBuildBr(Builder: BuilderRef, Dest: BasicBlockRef) ValueRef;
+pub extern fn LLVMBuildCondBr(Builder: BuilderRef, If: ValueRef, Then: BasicBlockRef, Else: BasicBlockRef) ValueRef;
+pub extern fn LLVMBuildSwitch(Builder: BuilderRef, V: ValueRef, Else: BasicBlockRef, NumCases: c_uint) ValueRef;
+pub extern fn LLVMAddCase(Switch: ValueRef, OnVal: ValueRef, Dest: BasicBlockRef) void;
+pub extern fn LLVMBuildUnreachable(Builder: BuilderRef) ValueRef;
+pub extern fn LLVMBuildAlloca(Builder: BuilderRef, Ty: TypeRef, Name: [*:0]const u8) ValueRef;
+pub extern fn LLVMBuildLoad2(Builder: BuilderRef, Ty: TypeRef, PointerVal: ValueRef, Name: [*:0]const u8) ValueRef;
+pub extern fn LLVMBuildStore(Builder: BuilderRef, Val: ValueRef, Ptr: ValueRef) ValueRef;
+pub extern fn LLVMBuildGEP2(Builder: BuilderRef, Ty: TypeRef, Pointer: ValueRef, Indices: [*]const ValueRef, NumIndices: c_uint, Name: [*:0]const u8) ValueRef;
 pub extern fn LLVMBuildAdd(Builder: BuilderRef, LHS: ValueRef, RHS: ValueRef, Name: [*:0]const u8) ValueRef;
 pub extern fn LLVMBuildAnd(Builder: BuilderRef, LHS: ValueRef, RHS: ValueRef, Name: [*:0]const u8) ValueRef;
+pub extern fn LLVMBuildOr(Builder: BuilderRef, LHS: ValueRef, RHS: ValueRef, Name: [*:0]const u8) ValueRef;
 pub extern fn LLVMBuildXor(Builder: BuilderRef, LHS: ValueRef, RHS: ValueRef, Name: [*:0]const u8) ValueRef;
 pub extern fn LLVMBuildICmp(Builder: BuilderRef, Op: IntPredicate, LHS: ValueRef, RHS: ValueRef, Name: [*:0]const u8) ValueRef;
 pub extern fn LLVMBuildZExt(Builder: BuilderRef, Val: ValueRef, DestTy: TypeRef, Name: [*:0]const u8) ValueRef;

@@ -183,7 +183,7 @@ pub fn main(init: std.process.Init) !u8 {
             out.flush() catch {};
             return 1;
         },
-        error.UnsupportedInstruction => {
+        error.UnsupportedInstruction, error.InvalidTarget => {
             out.flush() catch {};
             return 1;
         },
