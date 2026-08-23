@@ -2,6 +2,9 @@
 
 const std = @import("std");
 pub const elk = @import("elk.zig");
+pub const codegen = @import("codegen/codegen.zig");
+pub const linker = @import("linker.zig");
+pub const llvm = @import("llvmc/root.zig");
 
 pub const Error = error{
     AssemblyFailed,
@@ -57,4 +60,90 @@ pub fn assembleFile(
     errdefer air.deinit(gpa);
 
     return .{ .air = air, .source = source, .text = text };
+}
+
+/// scratch location for temp object file
+const obj_scratch_path = ".lcc-tmp.o";
+
+pub const CompileError = error{
+    UnsupportedInstruction,
+    InvalidModule,
+    UnknownTriple,
+    EmissionFailed,
+    PassRunFailed,
+    OutOfMemory,
+} || linker.LinkError || std.Io.File.OpenError || std.Io.Writer.Error;
+
+/// elk.Air -> LLVM module -> verify -> optimise -> object file -> link
+pub fn compileAndLink(
+    io: std.Io,
+    gpa: std.mem.Allocator,
+    program: *const Program,
+    environ_map: ?*const std.process.Environ.Map,
+    output_path: []const u8,
+    level: llvm.pass.Level,
+    emit_llvm: bool,
+) CompileError!void {
+    var output = try codegen.CodeGen.emit(&program.air, gpa);
+    defer output.deinit();
+
+    if (emit_llvm) printLlvm(io, gpa, output.module);
+
+    var machine = try llvm.target.TargetMachine.createDefault(codeGenLevel(level));
+    defer machine.dispose();
+    machine.configureModule(output.module);
+
+    var message: ?[]u8 = null;
+    output.module.verify(gpa, &message) catch |err| switch (err) {
+        error.InvalidModule => {
+            if (message) |msg| {
+                std.log.err("LLVM verifier: {s}", .{msg});
+                gpa.free(msg);
+            }
+            return error.InvalidModule;
+        },
+        error.OutOfMemory => return error.OutOfMemory,
+    };
+
+    try llvm.pass.runDefault(level, gpa, output.module, machine);
+
+    const object = try machine.emitObjectAlloc(gpa, output.module);
+    defer gpa.free(object);
+
+    try writeScratch(io, object);
+    errdefer std.Io.Dir.cwd().deleteFile(io, obj_scratch_path) catch {};
+
+    try linker.link(io, gpa, environ_map, obj_scratch_path, output_path);
+
+    std.Io.Dir.cwd().deleteFile(io, obj_scratch_path) catch {};
+}
+
+fn codeGenLevel(level: llvm.pass.Level) llvm.bindings.CodeGenOptLevel {
+    return switch (level) {
+        .o0 => .none,
+        .o1 => .less,
+        .o2 => .default,
+        .o3 => .aggressive,
+    };
+}
+
+fn printLlvm(io: std.Io, gpa: std.mem.Allocator, module: llvm.module.Module) void {
+    const text = module.printToStringAlloc(gpa) catch return;
+    defer gpa.free(text);
+
+    var stdout_buffer: [1024]u8 = undefined;
+    var stdout_writer = std.Io.File.stdout().writer(io, &stdout_buffer);
+    // ignore failure
+    stdout_writer.interface.writeAll(text) catch {};
+    stdout_writer.interface.flush() catch {};
+}
+
+fn writeScratch(io: std.Io, bytes: []const u8) (std.Io.File.OpenError || std.Io.Writer.Error)!void {
+    const file = try std.Io.Dir.cwd().createFile(io, obj_scratch_path, .{});
+    defer file.close(io);
+
+    var buffer: [4096]u8 = undefined;
+    var writer = file.writer(io, &buffer);
+    try writer.interface.writeAll(bytes);
+    try writer.interface.flush();
 }

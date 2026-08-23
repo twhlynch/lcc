@@ -165,10 +165,54 @@ pub fn main(init: std.process.Init) !u8 {
     };
     defer program.deinit(gpa);
 
+    diags.summarize();
+
     try printSummary(out, &program);
 
-    diags.summarize();
-    try out.flush();
+    compiler.compileAndLink(
+        io,
+        gpa,
+        &program,
+        init.environ_map,
+        options.output orelse defaultOutput(options.input.?),
+        @enumFromInt(@intFromEnum(options.optimize)),
+        options.emit_llvm,
+    ) catch |err| switch (err) {
+        error.InvalidModule => {
+            std.log.err("generated LLVM IR failed verification", .{});
+            out.flush() catch {};
+            return 1;
+        },
+        error.UnsupportedInstruction => {
+            out.flush() catch {};
+            return 1;
+        },
+        error.ClangNotFound => {
+            std.log.err("'clang' not found; cannot link the executable", .{});
+            out.flush() catch {};
+            return 1;
+        },
+        error.LinkFailed => {
+            std.log.err("linking failed", .{});
+            out.flush() catch {};
+            return 1;
+        },
+        error.OutOfMemory => return error.OutOfMemory,
+        else => |other| return other,
+    };
+
+    // a closed pipe is not an error
+    out.flush() catch {};
 
     return 0;
+}
+
+/// lcc foo.asm -> foo
+fn defaultOutput(input: []const u8) []const u8 {
+    const basename = std.fs.path.basename(input);
+    const stem = if (std.fs.path.extension(basename).len > 0)
+        basename[0 .. basename.len - std.fs.path.extension(basename).len]
+    else
+        basename;
+    return stem;
 }
