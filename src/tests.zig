@@ -19,6 +19,7 @@ const examples = [_]Example{
     .{ .name = "hello", .exit_code = 0, .stdout = "Hello World!\n" },
     .{ .name = "loops", .exit_code = 15 },
     .{ .name = "memory", .exit_code = 12 },
+    .{ .name = "pyramid", .exit_code = 0, .stdout = "Pyramid height (0-9): 1\n*\n" },
     .{ .name = "subroutines", .exit_code = 50 },
     .{ .name = "uppercase", .exit_code = 0, .stdout = "1" },
 };
