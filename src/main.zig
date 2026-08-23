@@ -7,6 +7,10 @@ const elk = compiler.elk;
 
 const version = "0.1.0";
 
+test {
+    _ = @import("tests.zig");
+}
+
 const usage =
     \\Usage: lcc [options] <input.asm>
     \\
