@@ -6,5 +6,6 @@
     add r2, r2, #-3
     not r3, r1
     and r4, r1, r2
+    add r0, r1, r2
 
 .END
