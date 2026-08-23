@@ -10,17 +10,18 @@ const usage =
     \\
     \\Options:
     \\  -o <file>     Output executable path
-    \\  -O<N>         Optimisation level, 0-3
-    \\  --emit-llvm   Print generated LLVM IR
+    \\  -O<N>         Optimisation level: none, 0-3
+    \\  --emit-llvm   Print optimised LLVM IR
     \\  -h, --help    Show this help
     \\
 ;
 
 pub const Optimize = enum(u8) {
-    @"0" = 0,
-    @"1" = 1,
-    @"2" = 2,
-    @"3" = 3,
+    none = 0,
+    @"0" = 1,
+    @"1" = 2,
+    @"2" = 3,
+    @"3" = 4,
 };
 
 pub const Options = struct {
@@ -61,11 +62,14 @@ fn parseArgs(
             options.emit_llvm = true;
         } else if (std.mem.startsWith(u8, arg, "-O")) {
             const level = arg[2..];
-            if (level.len != 1 or level[0] < '0' or level[0] > '3') {
-                std.log.err("invalid optimisation level '{s}' (expected -O0..-O3)", .{arg});
+            if (std.mem.eql(u8, level, "none")) {
+                options.optimize = .none;
+            } else if (level.len == 1 and level[0] >= '0' and level[0] <= '3') {
+                options.optimize = @enumFromInt(level[0] - '0' + 1);
+            } else {
+                std.log.err("invalid optimisation level '{s}' (expected -Onone or -O0..-O3)", .{arg});
                 return error.Usage;
             }
-            options.optimize = @enumFromInt(level[0] - '0');
         } else if (std.mem.startsWith(u8, arg, "-")) {
             std.log.err("unknown option '{s}'", .{arg});
             return error.Usage;
@@ -168,6 +172,7 @@ pub fn main(init: std.process.Init) !u8 {
     diags.summarize();
 
     try printSummary(out, &program);
+    if (options.emit_llvm) try out.writeByte('\n');
 
     compiler.compileAndLink(
         io,

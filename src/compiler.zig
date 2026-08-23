@@ -92,8 +92,6 @@ pub fn compileAndLink(
     var output = try codegen.CodeGen.emit(&program.air, gpa);
     defer output.deinit();
 
-    if (emit_llvm) printLlvm(io, gpa, output.module);
-
     var machine = try llvm.target.TargetMachine.createDefault(codeGenLevel(level));
     defer machine.dispose();
     machine.configureModule(output.module);
@@ -112,6 +110,9 @@ pub fn compileAndLink(
 
     try llvm.pass.runDefault(level, gpa, output.module, machine);
 
+    // printed after optimisation so the -O level is visible
+    if (emit_llvm) printLlvm(io, gpa, output.module);
+
     const object = try machine.emitObjectAlloc(gpa, output.module);
     defer gpa.free(object);
 
@@ -128,6 +129,7 @@ pub fn compileAndLink(
 
 fn codeGenLevel(level: llvm.pass.Level) llvm.bindings.CodeGenOptLevel {
     return switch (level) {
+        .none => .none,
         .o0 => .none,
         .o1 => .less,
         .o2 => .default,
