@@ -11,6 +11,7 @@ const usage =
     \\Options:
     \\  -o <file>     Output executable path
     \\  -O<N>         Optimisation level, 0-3
+    \\  --emit-llvm   Print generated LLVM IR
     \\  -h, --help    Show this help
     \\
 ;
@@ -26,6 +27,7 @@ pub const Options = struct {
     input: ?[]const u8 = null,
     output: ?[]const u8 = null,
     optimize: Optimize = .@"0",
+    emit_llvm: bool = false,
 };
 
 const ParsedArgs = union(enum) {
@@ -55,6 +57,8 @@ fn parseArgs(
                 return error.Usage;
             }
             options.output = std.mem.span(args[i]);
+        } else if (std.mem.eql(u8, arg, "--emit-llvm")) {
+            options.emit_llvm = true;
         } else if (std.mem.startsWith(u8, arg, "-O")) {
             const level = arg[2..];
             if (level.len != 1 or level[0] < '0' or level[0] > '3') {
