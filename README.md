@@ -24,12 +24,19 @@ Diagnostics are reported by ELK's own infrastructure.
 
 ### Flags
 
-| Flag          | Description                     |
-| ------------- | ------------------------------- |
-| `-o <file>`   | Output executable               |
-| `-Onone`      | Skip optimisation pass entirely |
-| `-O0`..`-O3`  | LLVM optimisation levels        |
-| `--emit-llvm` | Print optimised LLVM IR         |
+| Flag               | Description                                          |
+| ------------------ | ---------------------------------------------------- |
+| `-o <file>`        | Output executable                                    |
+| `-Onone`           | Skip optimisation pass entirely                      |
+| `-O0`..`-O3`       | LLVM optimisation levels                             |
+| `-emit-llvm`       | Print optimised LLVM IR                              |
+| `-target <triple>` | Compile for another target (e.g. `x86_64-linux-gnu`) |
+| `-arch <name>`     | Shorthand for `-target` (e.g. `-arch x86_64`)        |
+
+Cross targets reuse the host operating system suffix when only an architecture
+is given, so `-arch x86_64` on a Mac produces an x86_64 executable that runs
+under Rosetta. Backends are resolved from the shared LLVM library at runtime,
+so no rebuild is needed to compile for a different architecture.
 
 ## Runtime
 

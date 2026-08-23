@@ -11,20 +11,36 @@ const candidate_dirs = [_][]const u8{
 };
 
 /// links object_path and runtime_path into output_path
-/// diagnostics from clang are inherited
+/// triple is passed to clang for cross compilation when given
 pub fn link(
     io: std.Io,
     gpa: std.mem.Allocator,
     environ_map: ?*const std.process.Environ.Map,
     object_path: []const u8,
     runtime_path: []const u8,
+    triple: ?[]const u8,
     output_path: []const u8,
 ) LinkError!void {
     const clang = findClang(gpa, io, environ_map) orelse return error.ClangNotFound;
     defer gpa.free(clang);
 
+    var argv: [8][]const u8 = undefined;
+    var argc: usize = 0;
+    argv[argc] = clang;
+    argc += 1;
+    if (triple) |t| {
+        argv[argc] = "-target";
+        argv[argc + 1] = t;
+        argc += 2;
+    }
+    argv[argc] = object_path;
+    argv[argc + 1] = runtime_path;
+    argv[argc + 2] = "-o";
+    argv[argc + 3] = output_path;
+    argc += 4;
+
     var child = std.process.spawn(io, .{
-        .argv = &.{ clang, object_path, runtime_path, "-o", output_path },
+        .argv = argv[0..argc],
         .stdout = .inherit,
         .stderr = .inherit,
     }) catch return error.LinkFailed;

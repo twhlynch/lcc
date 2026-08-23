@@ -5,14 +5,19 @@ const std = @import("std");
 const compiler = @import("compiler.zig");
 const elk = compiler.elk;
 
+const version = "0.1.0";
+
 const usage =
     \\Usage: lcc [options] <input.asm>
     \\
     \\Options:
-    \\  -o <file>     Output executable path
-    \\  -O<N>         Optimisation level: none, 0-3
-    \\  --emit-llvm   Print optimised LLVM IR
-    \\  -h, --help    Show this help
+    \\  -o <file>        Output executable path
+    \\  -O<N>            Optimisation level: none, 0-3
+    \\  -target <triple> LLVM target triple for code generation
+    \\  -arch <name>     Architecture component of the host triple
+    \\  -emit-llvm       Print optimised LLVM IR
+    \\  --version        Print version information
+    \\  -h, --help       Show this help
     \\
 ;
 
@@ -29,10 +34,13 @@ pub const Options = struct {
     output: ?[]const u8 = null,
     optimize: Optimize = .@"0",
     emit_llvm: bool = false,
+    target: ?[]const u8 = null,
+    arch: ?[]const u8 = null,
 };
 
 const ParsedArgs = union(enum) {
     help,
+    version,
     run: Options,
 };
 
@@ -51,6 +59,9 @@ fn parseArgs(
         if (std.mem.eql(u8, arg, "-h") or std.mem.eql(u8, arg, "--help")) {
             try out.writeAll(usage);
             return .help;
+        } else if (std.mem.eql(u8, arg, "--version")) {
+            try out.print("lcc {s}\n", .{version});
+            return .version;
         } else if (std.mem.eql(u8, arg, "-o")) {
             i += 1;
             if (i == args.len) {
@@ -58,7 +69,21 @@ fn parseArgs(
                 return error.Usage;
             }
             options.output = std.mem.span(args[i]);
-        } else if (std.mem.eql(u8, arg, "--emit-llvm")) {
+        } else if (std.mem.eql(u8, arg, "-target") or std.mem.eql(u8, arg, "--target")) {
+            i += 1;
+            if (i == args.len) {
+                std.log.err("-target requires a triple argument", .{});
+                return error.Usage;
+            }
+            options.target = std.mem.span(args[i]);
+        } else if (std.mem.eql(u8, arg, "-arch")) {
+            i += 1;
+            if (i == args.len) {
+                std.log.err("-arch requires an architecture name", .{});
+                return error.Usage;
+            }
+            options.arch = std.mem.span(args[i]);
+        } else if (std.mem.eql(u8, arg, "-emit-llvm")) {
             options.emit_llvm = true;
         } else if (std.mem.startsWith(u8, arg, "-O")) {
             const level = arg[2..];
@@ -157,6 +182,7 @@ pub fn main(init: std.process.Init) !u8 {
     try out.flush();
     const options = switch (parsed) {
         .help => return 0,
+        .version => return 0,
         .run => |options| options,
     };
 
@@ -174,6 +200,9 @@ pub fn main(init: std.process.Init) !u8 {
     try printSummary(out, &program);
     if (options.emit_llvm) try out.writeByte('\n');
 
+    const triple = compiler.resolveTriple(gpa, options.target, options.arch) catch |err| return err;
+    defer if (triple) |t| gpa.free(t);
+
     compiler.compileAndLink(
         io,
         gpa,
@@ -182,12 +211,15 @@ pub fn main(init: std.process.Init) !u8 {
         options.output orelse defaultOutput(options.input.?),
         @enumFromInt(@intFromEnum(options.optimize)),
         options.emit_llvm,
+        triple,
     ) catch |err| switch (err) {
         error.InvalidModule => {
             std.log.err("generated LLVM IR failed verification", .{});
             out.flush() catch {};
             return 1;
         },
+        // unsupported instructions and bad targets are logged at the
+        // failing word during code generation
         error.UnsupportedInstruction, error.InvalidTarget => {
             out.flush() catch {};
             return 1;
@@ -202,8 +234,18 @@ pub fn main(init: std.process.Init) !u8 {
             out.flush() catch {};
             return 1;
         },
-        error.OutOfMemory => return error.OutOfMemory,
-        else => |other| return other,
+        error.PassRunFailed => {
+            std.log.err("LLVM optimisation pipeline failed", .{});
+            out.flush() catch {};
+            return 1;
+        },
+        // everything left already logged where it occurred, or is
+        // environmental; report cleanly instead of unwinding
+        else => |other| {
+            std.log.err("compilation failed: {s}", .{@errorName(other)});
+            out.flush() catch {};
+            return 1;
+        },
     };
 
     // a closed pipe is not an error

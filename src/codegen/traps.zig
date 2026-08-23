@@ -1,5 +1,6 @@
 //! trap lowering into native runtime calls
 
+const std = @import("std");
 const codegen = @import("codegen.zig");
 
 const CodeGen = codegen.CodeGen;
@@ -46,6 +47,9 @@ pub fn lower(cg: *CodeGen, vect: u8) codegen.Error!bool {
             _ = cg.builder.buildUnreachable();
             return true;
         },
-        else => return error.UnsupportedInstruction,
+        else => {
+            std.log.err("trap vector x{X:0>2} has no native equivalent", .{vect});
+            return error.UnsupportedInstruction;
+        },
     }
 }

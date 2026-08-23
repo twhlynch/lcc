@@ -273,7 +273,13 @@ pub const CodeGen = struct {
     /// validates a PC-relative target against the program bounds
     pub fn branchTargetIndex(cg: *CodeGen, index: usize, offset: i64) Error!usize {
         const target = @as(i64, @intCast(index)) + 1 + offset;
-        if (target < 0 or target > cg.air.lines.items.len) return error.InvalidTarget;
+        if (target < 0 or target > cg.air.lines.items.len) {
+            std.log.err(
+                "control transfer from x{X} reaches x{X}, outside the program image",
+                .{ @as(u64, @intCast(cg.air.origin + index + 1)), @as(i64, cg.air.origin) + target },
+            );
+            return error.InvalidTarget;
+        }
         return @intCast(target);
     }
 };

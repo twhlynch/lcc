@@ -8,21 +8,18 @@ pub const TargetError = error{ UnknownTriple, EmissionFailed };
 
 pub const Module = module_mod.Module;
 
-/// default target machine for this host, at opt_level
 pub const TargetMachine = struct {
     ref: bindings.TargetMachineRef,
     triple_owned: [:0]u8,
     data_layout: bindings.TargetDataRef,
 
-    pub fn createDefault(opt_level: bindings.CodeGenOptLevel) TargetError!TargetMachine {
-        bindings.initializeNativeTarget(@import("builtin").cpu.arch);
-
-        const triple_raw = bindings.LLVMGetDefaultTargetTriple();
-        defer bindings.LLVMDisposeMessage(triple_raw);
+    /// target machine for triple, at opt_level
+    pub fn create(triple: [*:0]const u8, opt_level: bindings.CodeGenOptLevel) TargetError!TargetMachine {
+        initializeTargetFor(std.mem.span(triple));
 
         var error_message: ?[*:0]u8 = null;
         var target: bindings.TargetRef = undefined;
-        if (bindings.LLVMGetTargetFromTriple(triple_raw, &target, &error_message) != 0) {
+        if (bindings.LLVMGetTargetFromTriple(triple, &target, &error_message) != 0) {
             if (error_message) |msg| {
                 std.log.err("LLVM: {s}", .{std.mem.span(msg)});
                 bindings.LLVMDisposeMessage(msg);
@@ -32,7 +29,7 @@ pub const TargetMachine = struct {
 
         const ref = bindings.LLVMCreateTargetMachine(
             target,
-            triple_raw,
+            triple,
             "",
             "",
             opt_level,
@@ -41,13 +38,20 @@ pub const TargetMachine = struct {
         );
 
         // keep an owned copy, the C API string is disposed above.
-        const triple_copy: [:0]u8 = std.heap.c_allocator.dupeZ(u8, std.mem.span(triple_raw)) catch return error.EmissionFailed;
+        const triple_copy: [:0]u8 = std.heap.c_allocator.dupeZ(u8, std.mem.span(triple)) catch return error.EmissionFailed;
 
         return .{
             .ref = ref,
             .triple_owned = triple_copy,
             .data_layout = bindings.LLVMCreateTargetDataLayout(ref),
         };
+    }
+
+    /// default target machine for this host, at opt_level
+    pub fn createDefault(opt_level: bindings.CodeGenOptLevel) TargetError!TargetMachine {
+        const triple_raw = bindings.LLVMGetDefaultTargetTriple();
+        defer bindings.LLVMDisposeMessage(triple_raw);
+        return create(triple_raw, opt_level);
     }
 
     pub fn dispose(machine: *TargetMachine) void {
@@ -62,7 +66,7 @@ pub const TargetMachine = struct {
         module.setDataLayout(machine.data_layout);
     }
 
-    /// emits a native object file into memory. caller frees the result
+    /// emits an object file into memory. caller frees the result
     pub fn emitObjectAlloc(
         machine: TargetMachine,
         gpa: std.mem.Allocator,
@@ -90,3 +94,50 @@ pub const TargetMachine = struct {
         return gpa.dupe(u8, bytes);
     }
 };
+
+/// initialises the llvm backend matching the triple's architecture
+/// backends are resolved through dlsym so lcc does not link every target
+fn initializeTargetFor(triple: []const u8) void {
+    const prefix = if (std.mem.indexOfScalar(u8, triple, '-')) |dash|
+        triple[0..dash]
+    else
+        triple;
+
+    const names = [_]struct { match: []const u8, backend: []const u8 }{
+        .{ .match = "x86_64", .backend = "X86" },
+        .{ .match = "amd64", .backend = "X86" },
+        .{ .match = "i386", .backend = "X86" },
+        .{ .match = "i686", .backend = "X86" },
+        .{ .match = "arm64", .backend = "AArch64" },
+        .{ .match = "aarch64", .backend = "AArch64" },
+        .{ .match = "arm", .backend = "ARM" },
+        .{ .match = "riscv32", .backend = "RISCV" },
+        .{ .match = "riscv64", .backend = "RISCV" },
+    };
+
+    var backend: ?[]const u8 = null;
+    for (names) |name| {
+        if (std.mem.eql(u8, prefix, name.match)) backend = name.backend;
+    }
+    // unknown architectures fall back to whatever llvm resolves itself
+    const backend_name = backend orelse return;
+
+    const suffixes = [_][]const u8{ "TargetInfo", "Target", "TargetMC", "AsmPrinter", "AsmParser" };
+
+    // handle for the current process image, which includes libLLVM
+    const handle = std.c.dlopen(null, .{ .LAZY = true }) orelse return;
+    defer _ = std.c.dlclose(handle);
+
+    for (suffixes) |suffix| {
+        var buffer: [64]u8 = undefined;
+        const symbol = std.fmt.bufPrintZ(
+            &buffer,
+            "LLVMInitialize{s}{s}",
+            .{ backend_name, suffix },
+        ) catch unreachable;
+
+        const init_fn: ?*const fn () callconv(.c) void =
+            @ptrCast(@alignCast(std.c.dlsym(handle, symbol.ptr)));
+        if (init_fn) |f| f();
+    }
+}

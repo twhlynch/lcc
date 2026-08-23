@@ -79,6 +79,29 @@ pub const CompileError = error{
     OutOfMemory,
 } || linker.LinkError || std.Io.File.OpenError || std.Io.Writer.Error;
 
+/// resolves the -target and -arch flags into an llvm triple
+/// -arch replaces the architecture component of the host triple
+pub fn resolveTriple(
+    gpa: std.mem.Allocator,
+    target: ?[]const u8,
+    arch: ?[]const u8,
+) error{OutOfMemory}!?[]u8 {
+    if (target) |t| return try gpa.dupe(u8, t);
+
+    const arch_name = arch orelse return null;
+
+    const host = llvm.bindings.LLVMGetDefaultTargetTriple();
+    defer llvm.bindings.LLVMDisposeMessage(host);
+    const triple = std.mem.span(host);
+
+    // keep vendor-os-environment, swap the architecture
+    const rest = if (std.mem.indexOfScalar(u8, triple, '-')) |dash|
+        triple[dash..]
+    else
+        "";
+    return try std.fmt.allocPrint(gpa, "{s}{s}", .{ arch_name, rest });
+}
+
 /// elk.Air -> LLVM module -> verify -> optimise -> object file -> link
 pub fn compileAndLink(
     io: std.Io,
@@ -88,11 +111,16 @@ pub fn compileAndLink(
     output_path: []const u8,
     level: llvm.pass.Level,
     emit_llvm: bool,
+    triple: ?[]const u8,
 ) CompileError!void {
     var output = try codegen.CodeGen.emit(&program.air, gpa);
     defer output.deinit();
 
-    var machine = try llvm.target.TargetMachine.createDefault(codeGenLevel(level));
+    var machine = if (triple) |t| blk: {
+        const triple_z = try gpa.dupeZ(u8, t);
+        defer gpa.free(triple_z);
+        break :blk try llvm.target.TargetMachine.create(triple_z, codeGenLevel(level));
+    } else try llvm.target.TargetMachine.createDefault(codeGenLevel(level));
     defer machine.dispose();
     machine.configureModule(output.module);
 
@@ -121,7 +149,7 @@ pub fn compileAndLink(
     try writeScratch(io, rt_scratch_path, runtime_source);
     errdefer std.Io.Dir.cwd().deleteFile(io, rt_scratch_path) catch {};
 
-    try linker.link(io, gpa, environ_map, obj_scratch_path, rt_scratch_path, output_path);
+    try linker.link(io, gpa, environ_map, obj_scratch_path, rt_scratch_path, triple, output_path);
 
     std.Io.Dir.cwd().deleteFile(io, obj_scratch_path) catch {};
     std.Io.Dir.cwd().deleteFile(io, rt_scratch_path) catch {};

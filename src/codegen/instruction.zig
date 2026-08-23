@@ -186,7 +186,10 @@ fn resolvedTarget(
 ) codegen.Error!usize {
     return switch (operand.value) {
         .resolved => |formed| cg.branchTargetIndex(index, formed.integer),
-        .unresolved => error.InvalidTarget,
+        .unresolved => blk: {
+            std.log.err("unresolved label reference at x{X}", .{@as(u64, @intCast(cg.air.origin + index))});
+            break :blk error.InvalidTarget;
+        },
     };
 }
 
