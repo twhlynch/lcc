@@ -79,3 +79,13 @@ zig build
 zig build test
 ./zig-out/bin/lcc examples/hello.asm
 ```
+
+`zig build test` also compares compiled output against
+[elk](https://codeberg.org/dxrcy/elk) when it is on `PATH`.
+Install elk from source:
+
+```sh
+git clone https://codeberg.org/dxrcy/elk
+cd elk && zig build -Doptimize=ReleaseFast
+sudo cp zig-out/bin/elk /usr/local/bin/
+```

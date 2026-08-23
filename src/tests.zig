@@ -15,13 +15,13 @@ const examples = [_]Example{
     .{ .name = "arithmetic", .exit_code = 12 },
     .{ .name = "echo", .exit_code = 0, .stdout = "1\n" },
     .{ .name = "fibonacci", .exit_code = 55 },
-    .{ .name = "greet", .exit_code = 0, .stdout = "Input> 1\n\nHello, 1\nOK" },
+    .{ .name = "greet", .exit_code = 0, .stdout = "Input> 1\n\nHello, 1\nOK\n" },
     .{ .name = "hello", .exit_code = 0, .stdout = "Hello World!\n" },
     .{ .name = "loops", .exit_code = 15 },
     .{ .name = "memory", .exit_code = 12 },
     .{ .name = "pyramid", .exit_code = 0, .stdout = "Pyramid height (0-9): 1\n*\n" },
     .{ .name = "subroutines", .exit_code = 50 },
-    .{ .name = "uppercase", .exit_code = 0, .stdout = "1" },
+    .{ .name = "uppercase", .exit_code = 0, .stdout = "1\n" },
 };
 
 fn requireLcc(io: std.Io) void {
@@ -31,6 +31,8 @@ fn requireLcc(io: std.Io) void {
     };
 }
 
+const RunResult = struct { exit: u8, stdout: []const u8, stderr: []const u8 };
+
 /// compiles one example at opt level and executes the result with "1" on
 /// stdin, returning the exit code and stdout of the compiled program
 fn runProgram(
@@ -38,7 +40,7 @@ fn runProgram(
     io: std.Io,
     example: []const u8,
     opt_level: []const u8,
-) !struct { exit: u8, stdout: []const u8 } {
+) !RunResult {
     var out_path_buf: [128]u8 = undefined;
     const out_path = try std.fmt.bufPrint(&out_path_buf, ".lcc-test/{s}", .{example});
 
@@ -73,40 +75,71 @@ fn runProgram(
         },
     }
 
+    return execWithStdin(alloc, io, &.{out_path}, "1\n");
+}
+
+/// spawns argv with input piped to stdin and collects its stdout and stderr
+fn execWithStdin(
+    alloc: std.mem.Allocator,
+    io: std.Io,
+    argv: []const []const u8,
+    input: []const u8,
+) !RunResult {
     var child = try std.process.spawn(io, .{
-        .argv = &.{out_path},
+        .argv = argv,
         .stdin = .pipe,
         .stdout = .pipe,
-        .stderr = .inherit,
+        // captured so emulator noise does not pollute the test output
+        .stderr = .pipe,
     });
 
     // feed the same input to every program: numeric readers take 1 as a
     // number and string readers take it as a string
     var input_buffer: [64]u8 = undefined;
     var input_writer = child.stdin.?.writer(io, &input_buffer);
-    input_writer.interface.writeAll("1\n") catch {};
+    input_writer.interface.writeAll(input) catch {};
     input_writer.interface.flush() catch {};
     child.stdin.?.close(io);
     child.stdin = null;
 
-    var output_buffer: [4096]u8 = undefined;
-    var output_reader = child.stdout.?.reader(io, &output_buffer);
-    var stdout_list: std.ArrayList(u8) = .empty;
-    output_reader.interface.appendRemainingUnlimited(alloc, &stdout_list) catch |err| {
-        child.kill(io);
-        return err;
-    };
-    const stdout_data: []u8 = try stdout_list.toOwnedSlice(alloc);
-    child.stdout.?.close(io);
-    child.stdout = null;
+    const stdout_data = try drain(alloc, io, &child, .stdout);
+    const stderr_data = try drain(alloc, io, &child, .stderr);
 
     switch (child.wait(io) catch return error.ProgramCrashed) {
-        .exited => |code| return .{ .exit = code, .stdout = stdout_data },
+        .exited => |code| return .{ .exit = code, .stdout = stdout_data, .stderr = stderr_data },
         else => {
             alloc.free(stdout_data);
+            alloc.free(stderr_data);
             return error.ProgramCrashed;
         },
     }
+}
+
+/// reads a pipe of the child to end of file and closes it
+fn drain(
+    alloc: std.mem.Allocator,
+    io: std.Io,
+    child: *std.process.Child,
+    comptime which: enum { stdout, stderr },
+) ![]u8 {
+    const file = switch (which) {
+        .stdout => child.stdout orelse return alloc.dupe(u8, ""),
+        .stderr => child.stderr orelse return alloc.dupe(u8, ""),
+    };
+
+    var buffer: [4096]u8 = undefined;
+    var reader = file.reader(io, &buffer);
+    var list: std.ArrayList(u8) = .empty;
+    reader.interface.appendRemainingUnlimited(alloc, &list) catch |err| {
+        child.kill(io);
+        return err;
+    };
+    file.close(io);
+    switch (which) {
+        .stdout => child.stdout = null,
+        .stderr => child.stderr = null,
+    }
+    return try list.toOwnedSlice(alloc);
 }
 
 fn checkExample(alloc: std.mem.Allocator, expect: Example, opt_level: []const u8) !void {
@@ -134,6 +167,39 @@ test "optimised builds preserve behaviour" {
     try cwd.createDirPath(std.testing.io, ".lcc-test");
 
     for (examples) |expect| try checkExample(std.testing.allocator, expect, "-O2");
+}
+
+test "output matches the elk emulator" {
+    requireLcc(std.testing.io);
+    const cwd = std.Io.Dir.cwd();
+    try cwd.createDirPath(std.testing.io, ".lcc-test");
+    const io = std.testing.io;
+
+    for (examples) |expect| {
+        var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+        defer arena.deinit();
+        const alloc = arena.allocator();
+
+        var asm_path_buf: [128]u8 = undefined;
+        const asm_path = try std.fmt.bufPrint(&asm_path_buf, "examples/{s}.asm", .{expect.name});
+
+        // the emulator always exits 0 regardless of R0, so only output is
+        // compared here; exit codes are covered by checkExample
+        const emulated = execWithStdin(alloc, io, &.{ "elk", asm_path }, "1\n") catch |err| switch (err) {
+            error.FileNotFound => {
+                std.debug.print("elk not installed; skipping emulator comparison\n", .{});
+                return;
+            },
+            else => return err,
+        };
+
+        var out_path_buf: [128]u8 = undefined;
+        const out_path = try std.fmt.bufPrint(&out_path_buf, ".lcc-test/{s}", .{expect.name});
+        errdefer std.debug.print("{s}: compiled output differs from the emulator\n", .{expect.name});
+        const compiled = try execWithStdin(alloc, io, &.{out_path}, "1\n");
+
+        try std.testing.expectEqualStrings(emulated.stdout, compiled.stdout);
+    }
 }
 
 test "emit llvm produces a main function" {
