@@ -62,8 +62,12 @@ pub fn assembleFile(
     return .{ .air = air, .source = source, .text = text };
 }
 
-/// scratch location for temp object file
+/// scratch locations for temp object file and runtime source
 const obj_scratch_path = ".lcc-tmp.o";
+const rt_scratch_path = ".lcc-tmp-rt.c";
+
+/// native trap runtime, written next to the object file at link time
+const runtime_source = @embedFile("runtime/lc3_runtime.c");
 
 pub const CompileError = error{
     UnsupportedInstruction,
@@ -111,12 +115,15 @@ pub fn compileAndLink(
     const object = try machine.emitObjectAlloc(gpa, output.module);
     defer gpa.free(object);
 
-    try writeScratch(io, object);
+    try writeScratch(io, obj_scratch_path, object);
     errdefer std.Io.Dir.cwd().deleteFile(io, obj_scratch_path) catch {};
+    try writeScratch(io, rt_scratch_path, runtime_source);
+    errdefer std.Io.Dir.cwd().deleteFile(io, rt_scratch_path) catch {};
 
-    try linker.link(io, gpa, environ_map, obj_scratch_path, output_path);
+    try linker.link(io, gpa, environ_map, obj_scratch_path, rt_scratch_path, output_path);
 
     std.Io.Dir.cwd().deleteFile(io, obj_scratch_path) catch {};
+    std.Io.Dir.cwd().deleteFile(io, rt_scratch_path) catch {};
 }
 
 fn codeGenLevel(level: llvm.pass.Level) llvm.bindings.CodeGenOptLevel {
@@ -139,8 +146,8 @@ fn printLlvm(io: std.Io, gpa: std.mem.Allocator, module: llvm.module.Module) voi
     stdout_writer.interface.flush() catch {};
 }
 
-fn writeScratch(io: std.Io, bytes: []const u8) (std.Io.File.OpenError || std.Io.Writer.Error)!void {
-    const file = try std.Io.Dir.cwd().createFile(io, obj_scratch_path, .{});
+fn writeScratch(io: std.Io, path: []const u8, bytes: []const u8) (std.Io.File.OpenError || std.Io.Writer.Error)!void {
+    const file = try std.Io.Dir.cwd().createFile(io, path, .{});
     defer file.close(io);
 
     var buffer: [4096]u8 = undefined;

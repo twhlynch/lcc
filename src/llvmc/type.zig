@@ -24,7 +24,17 @@ pub fn memoryArray(element_type: bindings.TypeRef, count: u64) bindings.TypeRef 
     return bindings.LLVMArrayType2(element_type, count);
 }
 
-/// Function type with no parameters returning return_type
-pub fn function(return_type: bindings.TypeRef) bindings.TypeRef {
-    return bindings.LLVMFunctionType(return_type, null, 0, 0);
+/// void
+pub fn void_(context: Context) bindings.TypeRef {
+    return bindings.LLVMVoidTypeInContext(context.ref);
+}
+
+/// opaque pointer in the default address space
+pub fn pointer(context: Context) bindings.TypeRef {
+    return bindings.LLVMPointerTypeInContext(context.ref, 0);
+}
+
+/// Function type with param_types returning return_type
+pub fn function(return_type: bindings.TypeRef, param_types: []const bindings.TypeRef) bindings.TypeRef {
+    return bindings.LLVMFunctionType(return_type, param_types.ptr, @intCast(param_types.len), 0);
 }

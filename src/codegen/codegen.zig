@@ -19,6 +19,23 @@ pub const Error = error{
     OutOfMemory,
 };
 
+/// native runtime functions for trap lowering
+pub const RuntimeFn = enum { getc, out, puts, in, putsp, halt };
+
+const runtime_names = [_][*:0]const u8{ "lc3_getc", "lc3_out", "lc3_puts", "lc3_in", "lc3_putsp", "lc3_halt" };
+
+/// llvm type of a native runtime function
+fn runtimeType(context: llvm.context.Context, which: RuntimeFn) bindings.TypeRef {
+    const word = llvm.types.int16(context);
+    const pointer = llvm.types.pointer(context);
+    return switch (which) {
+        .getc, .in => llvm.types.function(word, &.{}),
+        .out => llvm.types.function(llvm.types.void_(context), &.{word}),
+        .puts, .putsp => llvm.types.function(llvm.types.void_(context), &.{ pointer, word }),
+        .halt => llvm.types.function(llvm.types.void_(context), &.{}),
+    };
+}
+
 /// everything the pipeline keeps alive between stages
 /// owned by the caller
 pub const Output = struct {
@@ -55,6 +72,9 @@ pub const CodeGen = struct {
     /// shared dispatch target for JMP/JSRR/RET
     dispatch_block: bindings.BasicBlockRef,
 
+    /// declarations of the native runtime trap functions
+    runtime_fns: [runtime_names.len]bindings.ValueRef,
+
     /// lowers a whole program into an LLVM module
     pub fn emit(
         air: *const elk.Air,
@@ -83,13 +103,23 @@ pub const CodeGen = struct {
             .dispatch_slot = undefined,
             .blocks = blocks.ptr[0 .. line_count + 1],
             .dispatch_block = undefined,
+            .runtime_fns = undefined,
         };
 
         const main_fn = bindings.LLVMAddFunction(
             output.module.ref,
             "main",
-            llvm.types.function(llvm.types.int32(context)),
+            llvm.types.function(llvm.types.int32(context), &.{}),
         );
+
+        // declare the native runtime functions
+        inline for (0..runtime_names.len) |which| {
+            cg.runtime_fns[which] = bindings.LLVMAddFunction(
+                output.module.ref,
+                runtime_names[which],
+                runtimeType(context, @enumFromInt(which)),
+            );
+        }
 
         // entry block: slots, memory image, jump to word 0
         const entry = bindings.LLVMAppendBasicBlockInContext(context.ref, main_fn, "entry");
@@ -224,6 +254,20 @@ pub const CodeGen = struct {
     pub fn dispatchTo(cg: *CodeGen, target: bindings.ValueRef) void {
         _ = cg.builder.buildStore(target, cg.dispatch_slot);
         _ = cg.builder.buildBr(cg.dispatch_block);
+    }
+
+    /// emits a call to a native runtime function
+    pub fn callRuntime(
+        cg: *CodeGen,
+        which: RuntimeFn,
+        args: []const bindings.ValueRef,
+    ) bindings.ValueRef {
+        // void calls must not be named
+        return cg.builder.buildCall(
+            cg.runtime_fns[@intFromEnum(which)],
+            args,
+            "",
+        );
     }
 
     /// validates a PC-relative target against the program bounds

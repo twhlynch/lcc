@@ -8,6 +8,7 @@ const std = @import("std");
 const elk = @import("../elk.zig");
 const llvm = @import("../llvmc/root.zig");
 const codegen = @import("codegen.zig");
+const traps = @import("traps.zig");
 
 const CodeGen = codegen.CodeGen;
 
@@ -52,6 +53,8 @@ pub fn lower(cg: *CodeGen, instruction: elk.Instruction, index: usize) codegen.E
             cg.dispatchTo(cg.loadReg(ops.base.value.code));
             return true;
         },
+
+        .trap => |ops| return traps.lower(cg, ops.vect.value.immediate.integer),
 
         .lea => |ops| {
             const address = try resolvedAddress(cg, ops.src, index);

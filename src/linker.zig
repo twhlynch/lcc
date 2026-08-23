@@ -10,20 +10,21 @@ const candidate_dirs = [_][]const u8{
     "/usr/local/opt/llvm/bin",
 };
 
-/// links object_path into output_path
+/// links object_path and runtime_path into output_path
 /// diagnostics from clang are inherited
 pub fn link(
     io: std.Io,
     gpa: std.mem.Allocator,
     environ_map: ?*const std.process.Environ.Map,
     object_path: []const u8,
+    runtime_path: []const u8,
     output_path: []const u8,
 ) LinkError!void {
     const clang = findClang(gpa, io, environ_map) orelse return error.ClangNotFound;
     defer gpa.free(clang);
 
     var child = std.process.spawn(io, .{
-        .argv = &.{ clang, object_path, "-o", output_path },
+        .argv = &.{ clang, object_path, runtime_path, "-o", output_path },
         .stdout = .inherit,
         .stderr = .inherit,
     }) catch return error.LinkFailed;

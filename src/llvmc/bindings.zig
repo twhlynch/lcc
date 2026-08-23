@@ -80,11 +80,15 @@ pub extern fn LLVMInt1TypeInContext(C: ContextRef) TypeRef;
 pub extern fn LLVMInt8TypeInContext(C: ContextRef) TypeRef;
 pub extern fn LLVMInt16TypeInContext(C: ContextRef) TypeRef;
 pub extern fn LLVMInt32TypeInContext(C: ContextRef) TypeRef;
+pub extern fn LLVMVoidTypeInContext(C: ContextRef) TypeRef;
+pub extern fn LLVMPointerTypeInContext(C: ContextRef, AddressSpace: c_uint) TypeRef;
 pub extern fn LLVMArrayType2(ElementType: TypeRef, ElementCount: c_ulonglong) TypeRef;
 pub extern fn LLVMFunctionType(ReturnType: TypeRef, ParamTypes: ?[*]const TypeRef, ParamCount: c_uint, IsVarArg: LLVMBool) TypeRef;
 
 // values
 pub extern fn LLVMAddFunction(M: ModuleRef, Name: [*:0]const u8, FunctionTy: TypeRef) ValueRef;
+pub extern fn LLVMGetNamedFunction(M: ModuleRef, Name: [*:0]const u8) ValueRef;
+pub extern fn LLVMGlobalGetValueType(Global: ValueRef) TypeRef;
 pub extern fn LLVMAddGlobal(M: ModuleRef, Ty: TypeRef, Name: [*:0]const u8) ValueRef;
 pub extern fn LLVMSetInitializer(GlobalVar: ValueRef, ConstantVal: ValueRef) void;
 pub extern fn LLVMConstInt(IntTy: TypeRef, N: c_ulonglong, SignExtend: LLVMBool) ValueRef;
@@ -100,6 +104,7 @@ pub extern fn LLVMBuildCondBr(Builder: BuilderRef, If: ValueRef, Then: BasicBloc
 pub extern fn LLVMBuildSwitch(Builder: BuilderRef, V: ValueRef, Else: BasicBlockRef, NumCases: c_uint) ValueRef;
 pub extern fn LLVMAddCase(Switch: ValueRef, OnVal: ValueRef, Dest: BasicBlockRef) void;
 pub extern fn LLVMBuildUnreachable(Builder: BuilderRef) ValueRef;
+pub extern fn LLVMBuildCall2(Builder: BuilderRef, Ty: TypeRef, Fn: ValueRef, Args: [*]const ValueRef, NumArgs: c_uint, Name: [*:0]const u8) ValueRef;
 pub extern fn LLVMBuildAlloca(Builder: BuilderRef, Ty: TypeRef, Name: [*:0]const u8) ValueRef;
 pub extern fn LLVMBuildLoad2(Builder: BuilderRef, Ty: TypeRef, PointerVal: ValueRef, Name: [*:0]const u8) ValueRef;
 pub extern fn LLVMBuildStore(Builder: BuilderRef, Val: ValueRef, Ptr: ValueRef) ValueRef;

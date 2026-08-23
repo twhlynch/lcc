@@ -60,6 +60,24 @@ pub const Builder = struct {
         return bindings.LLVMBuildUnreachable(builder.ref);
     }
 
+    pub fn buildCall(
+        builder: Builder,
+        fn_value: bindings.ValueRef,
+        args: []const bindings.ValueRef,
+        name: []const u8,
+    ) bindings.ValueRef {
+        var buffer: [32]u8 = undefined;
+        const ty = bindings.LLVMGlobalGetValueType(fn_value);
+        return bindings.LLVMBuildCall2(
+            builder.ref,
+            ty,
+            fn_value,
+            args.ptr,
+            @intCast(args.len),
+            nameZ(&buffer, name),
+        );
+    }
+
     pub fn buildAlloca(builder: Builder, ty: bindings.TypeRef, name: []const u8) bindings.ValueRef {
         var buffer: [32]u8 = undefined;
         return bindings.LLVMBuildAlloca(builder.ref, ty, nameZ(&buffer, name));
