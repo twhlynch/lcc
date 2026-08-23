@@ -24,7 +24,7 @@ pub fn link(
     const clang = findClang(gpa, io, environ_map) orelse return error.ClangNotFound;
     defer gpa.free(clang);
 
-    var argv: [8][]const u8 = undefined;
+    var argv: [11][]const u8 = undefined;
     var argc: usize = 0;
     argv[argc] = clang;
     argc += 1;
@@ -33,11 +33,15 @@ pub fn link(
         argv[argc + 1] = t;
         argc += 2;
     }
-    argv[argc] = object_path;
-    argv[argc + 1] = runtime_path;
-    argv[argc + 2] = "-o";
-    argv[argc + 3] = output_path;
-    argc += 4;
+    // one section per function so the linker can drop unused trap routines
+    argv[argc] = "-ffunction-sections";
+    argv[argc + 1] = "-fdata-sections";
+    argv[argc + 2] = object_path;
+    argv[argc + 3] = runtime_path;
+    argv[argc + 4] = "-o";
+    argv[argc + 5] = output_path;
+    argv[argc + 6] = gcFlag(triple);
+    argc += 7;
 
     var child = std.process.spawn(io, .{
         .argv = argv[0..argc],
@@ -51,6 +55,18 @@ pub fn link(
         .exited => |code| if (code != 0) return error.LinkFailed,
         else => return error.LinkFailed,
     }
+}
+
+/// linker flag that strips unreferenced sections
+fn gcFlag(triple: ?[]const u8) []const u8 {
+    const darwin = if (triple) |t|
+        std.mem.indexOf(u8, t, "darwin") != null or
+            std.mem.indexOf(u8, t, "macos") != null or
+            std.mem.indexOf(u8, t, "ios") != null
+    else
+        @import("builtin").os.tag.isDarwin();
+
+    return if (darwin) "-Wl,-dead_strip" else "-Wl,--gc-sections";
 }
 
 fn findClang(
