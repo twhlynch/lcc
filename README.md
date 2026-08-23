@@ -24,16 +24,17 @@ Diagnostics are reported by ELK's own infrastructure.
 
 ### Flags
 
-| Flag          | Description              |
-| ------------- | ------------------------ |
-| `-o <file>`   | Output executable        |
-| `-O0`..`-O3`  | LLVM optimisation levels |
-| `--emit-llvm` | Print generated LLVM IR  |
+| Flag          | Description                     |
+| ------------- | ------------------------------- |
+| `-o <file>`   | Output executable               |
+| `-Onone`      | Skip optimisation pass entirely |
+| `-O0`..`-O3`  | LLVM optimisation levels        |
+| `--emit-llvm` | Print optimised LLVM IR         |
 
 ## Build
 
-Requires Zig `0.16.x` and a shared-library LLVM installation (15 or newer,
-discovered via `llvm-config`):
+Requires Zig `0.16.x`, a shared-library LLVM installation (15 or newer,
+discovered via `llvm-config`), and `clang` on `PATH` for linking:
 
 ```sh
 brew install llvm      # macOS
