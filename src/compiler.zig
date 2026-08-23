@@ -139,7 +139,10 @@ pub fn compileAndLink(
     try llvm.pass.runDefault(level, gpa, output.module, machine);
 
     // printed after optimisation so the -O level is visible
-    if (emit_llvm) printLlvm(io, gpa, output.module);
+    if (emit_llvm) {
+        printLlvm(io, gpa, output.module);
+        return;
+    }
 
     const object = try machine.emitObjectAlloc(gpa, output.module);
     defer gpa.free(object);
