@@ -38,6 +38,16 @@ is given, so `-arch x86_64` on a Mac produces an x86_64 executable that runs
 under Rosetta. Backends are resolved from the shared LLVM library at runtime,
 so no rebuild is needed to compile for a different architecture.
 
+## Install
+
+Build a release binary and install it onto your `PATH`:
+
+```sh
+git clone https://github.com/twhlynch/lcc
+cd lcc
+sudo zig build -Doptimize=ReleaseFast --prefix /usr/local
+```
+
 ## Runtime
 
 The standard traps are implemented natively in `src/runtime/lc3_runtime.c`,
