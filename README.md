@@ -31,6 +31,22 @@ Diagnostics are reported by ELK's own infrastructure.
 | `-O0`..`-O3`  | LLVM optimisation levels        |
 | `--emit-llvm` | Print optimised LLVM IR         |
 
+## Runtime
+
+The standard traps are implemented natively in `src/runtime/lc3_runtime.c`,
+which is embedded into the compiler and linked into every executable:
+
+| Trap    | Vector | Behaviour                                          |
+| ------- | ------ | -------------------------------------------------- |
+| `GETC`  | x20    | Read one character into R0                         |
+| `OUT`   | x21    | Print the low byte of R0                           |
+| `PUTS`  | x22    | Print the NUL-terminated string at mem[R0]         |
+| `IN`    | x23    | Prompt with `Input> `, read and echo one character |
+| `PUTSP` | x24    | Like PUTS but two characters per word              |
+| `HALT`  | x25    | Flush output and exit 0                            |
+
+Trap semantics follow ELK's emulator.
+
 ## Build
 
 Requires Zig `0.16.x`, a shared-library LLVM installation (15 or newer,
