@@ -116,7 +116,7 @@ pub fn parseArgs(gpa: std.mem.Allocator, arena: std.mem.Allocator, args: []const
 
     const input = try options.getPos(gpa, zilc.types.string, .input, 0);
     if (options.pos.items.len > 1) {
-        std.log.err("unexpected argument '{s}'", .{options.pos.items[options.pos.items.len - 1]});
+        std.log.err("unexpected argument '{s}'", .{options.pos.items[1]});
         return error.Usage;
     }
 
