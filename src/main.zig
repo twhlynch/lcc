@@ -4,6 +4,7 @@ const std = @import("std");
 
 const compiler = @import("compiler.zig");
 const elk = compiler.elk;
+const zilc = @import("zilc");
 
 test {
     _ = @import("tests.zig");
@@ -38,13 +39,13 @@ pub const Optimize = enum(u8) {
     @"3" = 4,
 };
 
-pub const Options = struct {
-    input: ?[]const u8 = null,
-    output: ?[]const u8 = null,
-    optimize: Optimize = .@"0",
-    emit_llvm: bool = false,
-    target: ?[]const u8 = null,
-    arch: ?[]const u8 = null,
+const Options = struct {
+    input: []const u8,
+    output: ?[]const u8,
+    optimize: Optimize,
+    emit_llvm: bool,
+    target: ?[]const u8,
+    arch: ?[]const u8,
 };
 
 const ParsedArgs = union(enum) {
@@ -55,72 +56,77 @@ const ParsedArgs = union(enum) {
 
 const ArgsError = error{Usage} || std.Io.Writer.Error;
 
-fn parseArgs(
-    args: []const [*:0]const u8,
-    out: *std.Io.Writer,
-) ArgsError!ParsedArgs {
-    var options: Options = .{};
+const template = .{
+    .output = zilc.Flag{
+        .short = 'o',
+        .long = "output",
+        .value = zilc.types.string,
+    },
+    .optimize = zilc.Flag{
+        .short = 'O',
+        .long = "optimize",
+        .value = .{ .type = Optimize, .parser = parseOptimize },
+    },
+    .emit_llvm = zilc.Flag{
+        .long = "emit-llvm",
+    },
+    .target = zilc.Flag{
+        .long = "target",
+        .value = zilc.types.string,
+    },
+    .arch = zilc.Flag{
+        .long = "arch",
+        .value = zilc.types.string,
+    },
+};
 
-    var i: usize = 0;
-    while (i < args.len) : (i += 1) {
-        const arg = std.mem.span(args[i]);
+fn parseOptimize(dest: *anyopaque, src: []const u8, _: std.mem.Allocator) !void {
+    const optimize: *?Optimize = @ptrCast(@alignCast(dest));
+    if (std.mem.eql(u8, src, "none")) {
+        optimize.* = .none;
+    } else if (src.len == 1 and src[0] >= '0' and src[0] <= '3') {
+        optimize.* = @enumFromInt(src[0] - '0' + 1);
+    } else {
+        return error.InvalidValue;
+    }
+}
 
-        if (std.mem.eql(u8, arg, "-h") or std.mem.eql(u8, arg, "--help")) {
-            try out.writeAll(usage);
-            return .help;
-        } else if (std.mem.eql(u8, arg, "--version")) {
-            try out.writeAll(version);
-            return .version;
-        } else if (std.mem.eql(u8, arg, "-o")) {
-            i += 1;
-            if (i == args.len) {
-                std.log.err("-o requires a file argument", .{});
-                return error.Usage;
-            }
-            options.output = std.mem.span(args[i]);
-        } else if (std.mem.eql(u8, arg, "-target") or std.mem.eql(u8, arg, "--target")) {
-            i += 1;
-            if (i == args.len) {
-                std.log.err("-target requires a triple argument", .{});
-                return error.Usage;
-            }
-            options.target = std.mem.span(args[i]);
-        } else if (std.mem.eql(u8, arg, "-arch")) {
-            i += 1;
-            if (i == args.len) {
-                std.log.err("-arch requires an architecture name", .{});
-                return error.Usage;
-            }
-            options.arch = std.mem.span(args[i]);
-        } else if (std.mem.eql(u8, arg, "-emit-llvm")) {
-            options.emit_llvm = true;
-        } else if (std.mem.startsWith(u8, arg, "-O")) {
-            const level = arg[2..];
-            if (std.mem.eql(u8, level, "none")) {
-                options.optimize = .none;
-            } else if (level.len == 1 and level[0] >= '0' and level[0] <= '3') {
-                options.optimize = @enumFromInt(level[0] - '0' + 1);
-            } else {
-                std.log.err("invalid optimisation level '{s}' (expected -Onone or -O0..-O3)", .{arg});
-                return error.Usage;
-            }
-        } else if (std.mem.startsWith(u8, arg, "-")) {
-            std.log.err("unknown option '{s}'", .{arg});
-            return error.Usage;
-        } else if (options.input == null) {
-            options.input = arg;
-        } else {
-            std.log.err("unexpected argument '{s}'", .{arg});
-            return error.Usage;
+fn getMetaArg(args: []const []const u8) ?zilc.MetaArg {
+    if (args.len == 0)
+        return .help;
+    return zilc.getMetaArg(args);
+}
+
+pub fn parseArgs(gpa: std.mem.Allocator, arena: std.mem.Allocator, args: []const []const u8, out: *std.Io.Writer) !ParsedArgs {
+    if (getMetaArg(args)) |meta| {
+        switch (meta) {
+            .help => {
+                try out.writeAll(usage);
+                return .help;
+            },
+            .version => {
+                try out.writeAll(version);
+                return .version;
+            },
         }
     }
 
-    if (options.input == null) {
-        std.log.err("no input file\n{s}", .{usage});
+    const options: zilc.Options(template) = try .parse(gpa, arena, args);
+
+    const input = try options.getPos(gpa, zilc.types.string, .input, 0);
+    if (options.pos.items.len > 1) {
+        std.log.err("unexpected argument '{s}'", .{options.pos.items[options.pos.items.len - 1]});
         return error.Usage;
     }
 
-    return .{ .run = options };
+    return .{ .run = .{
+        .input = input,
+        .output = options.flags.output,
+        .optimize = options.flags.optimize orelse .@"0",
+        .emit_llvm = options.flags.emit_llvm,
+        .target = options.flags.target,
+        .arch = options.flags.arch,
+    } };
 }
 
 const Diagnostics = struct {
@@ -146,13 +152,13 @@ fn compile(
     options: Options,
     diags: *Diagnostics,
 ) (error{CompileFailed} || compiler.Error)!compiler.Program {
-    return compiler.assembleFile(io, gpa, options.input.?, &diags.reporter) catch |err| switch (err) {
+    return compiler.assembleFile(io, gpa, options.input, &diags.reporter) catch |err| switch (err) {
         error.AssemblyFailed => {
             diags.summarize();
             return error.CompileFailed;
         },
         error.FileNotFound => {
-            std.log.err("file not found: {s}", .{options.input.?});
+            std.log.err("file not found: {s}", .{options.input});
             return error.CompileFailed;
         },
         else => |other| return other,
@@ -181,12 +187,21 @@ pub fn main(init: std.process.Init) !u8 {
     var stdout_writer = std.Io.File.stdout().writer(io, &stdout_buffer);
     const out = &stdout_writer.interface;
 
-    const parsed = parseArgs(init.minimal.args.vector[1..], out) catch |err| switch (err) {
-        error.Usage => {
-            try out.flush();
-            return 2;
-        },
-        else => |other| return other,
+    const args_allocator = init.arena.allocator();
+    var args = try zilc.collectArgs(args_allocator, init.minimal.args);
+    defer args.deinit(init.arena.allocator());
+
+    const parsed = blk: {
+        var temp_arena = std.heap.ArenaAllocator.init(gpa);
+        defer temp_arena.deinit();
+        break :blk parseArgs(gpa, temp_arena.allocator(), args.items, out) catch |err|
+            switch (err) {
+                error.Usage => {
+                    try out.flush();
+                    return 2;
+                },
+                else => |other| return other,
+            };
     };
     try out.flush();
     const options = switch (parsed) {
@@ -217,7 +232,7 @@ pub fn main(init: std.process.Init) !u8 {
         gpa,
         &program,
         init.environ_map,
-        options.output orelse defaultOutput(options.input.?),
+        options.output orelse defaultOutput(options.input),
         @enumFromInt(@intFromEnum(options.optimize)),
         options.emit_llvm,
         triple,
