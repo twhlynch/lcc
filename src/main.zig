@@ -87,6 +87,7 @@ fn parseOptimize(dest: *anyopaque, src: []const u8, _: std.mem.Allocator) !void 
     } else if (src.len == 1 and src[0] >= '0' and src[0] <= '3') {
         optimize.* = @enumFromInt(src[0] - '0' + 1);
     } else {
+        std.log.err("invalid optimisation level '{s}' (expected -Onone or -O0..-O3)", .{src});
         return error.InvalidValue;
     }
 }
