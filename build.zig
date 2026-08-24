@@ -8,6 +8,9 @@ pub fn build(b: *std.Build) void {
     // elk
     const elk_dep = b.dependency("elk", .{});
     const elk_mod = elk_dep.module("elk");
+    // zilc
+    const zilc_dep = b.dependency("zilc", .{});
+    const zilc_mod = zilc_dep.module("zilc");
 
     // system LLVM linked as an external library
     const llvm = discoverLlvm(b);
@@ -20,6 +23,7 @@ pub fn build(b: *std.Build) void {
         .link_libc = true,
         .imports = &.{
             .{ .name = "elk", .module = elk_mod },
+            .{ .name = "zilc", .module = zilc_mod },
         },
     });
     linkLlvm(root_module, llvm);

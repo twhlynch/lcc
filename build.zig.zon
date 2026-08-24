@@ -10,6 +10,10 @@
             .url = "git+https://codeberg.org/dxrcy/elk#b28475f94901e090e769fae2f76b9ead71aa76c5",
             .hash = "elk-0.1.6-_Fml5JmNBABU7S8qSs3D0WoPHb-lM3a9GSmrA8huV8Ej",
         },
+        .zilc = .{
+            .url = "git+https://codeberg.org/dxrcy/zilc#acaf7b024fd6a2c46b802d7eb9808ec201ac9027",
+            .hash = "zilc-0.1.0-a-peQd9GAADxDOQqLB9xdujNTEveJcmQyswyk1Z_xWYQ",
+        },
     },
 
     .paths = .{
