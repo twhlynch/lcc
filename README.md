@@ -45,7 +45,7 @@ Build a release binary and install it onto your `PATH`:
 ```sh
 git clone https://github.com/twhlynch/lcc
 cd lcc
-sudo zig build -Doptimize=ReleaseFast --prefix /usr/local
+zig build install -Doptimize=ReleaseFast --prefix ~/.local
 ```
 
 ## Runtime
