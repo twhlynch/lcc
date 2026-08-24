@@ -25,9 +25,9 @@ const usage =
 ;
 
 const version =
-    \\ lcc 0.1.0
-    \\ Copyright (C) 2026 Tom Lynch
-    \\ License GPL-3.0
+    \\lcc 0.1.0
+    \\Copyright (C) 2026 Tom Lynch
+    \\License GPL-3.0
     \\
 ;
 
