@@ -26,12 +26,14 @@ Diagnostics are reported by ELK's own infrastructure.
 
 | Flag               | Description                                          |
 | ------------------ | ---------------------------------------------------- |
-| `-o <file>`        | Output executable                                    |
+| `-o <file>`        | Output executable path                               |
 | `-Onone`           | Skip optimisation pass entirely                      |
 | `-O0`..`-O3`       | LLVM optimisation levels                             |
 | `-emit-llvm`       | Print optimised LLVM IR                              |
 | `-target <triple>` | Compile for another target (e.g. `x86_64-linux-gnu`) |
 | `-arch <name>`     | Shorthand for `-target` (e.g. `-arch x86_64`)        |
+| `-v`, `--version`  | Print version information                            |
+| `-h`, `--help`     | Print the help message                               |
 
 Cross targets reuse the host operating system suffix when only an architecture
 is given, so `-arch x86_64` on a Mac produces an x86_64 executable that runs

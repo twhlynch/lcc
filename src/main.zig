@@ -15,11 +15,11 @@ const usage =
     \\
     \\Options:
     \\  -o <file>         Output executable path
-    \\  -O <N>            Optimisation level: none, 0-3
-    \\  --target <triple> LLVM target triple for code generation
-    \\  --arch <name>     Architecture component of the host triple
-    \\  --emit-llvm       Print optimised LLVM IR
-    \\  --version         Print version information
+    \\  -O<N>             Optimisation level: none, 0-3
+    \\  -target <triple>  LLVM target triple for code generation
+    \\  -arch <name>      Architecture component of the host triple
+    \\  -emit-llvm        Print optimised LLVM IR
+    \\  -v, --version     Print version information
     \\  -h, --help        Show this help
     \\
 ;
