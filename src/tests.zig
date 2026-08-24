@@ -13,6 +13,7 @@ const Example = struct {
 
 const examples = [_]Example{
     .{ .name = "arithmetic", .exit_code = 12 },
+    .{ .name = "debug", .exit_code = 0, .stdout = "1\n3\n6\n10\n15\n21\n28\n36\n45\n55\n66\n+----------------------------------+\n|       hex      int    uint   chr |\n| R0  x0042      +66      66    B  |\n| R1  x000B      +11      11    VT |\n| R2  x000A      +10      10    LF |\n| R3  x0001       +1       1   SOH |\n| R4  x0000       +0       0   NUL |\n| R5  x0000       +0       0   NUL |\n| R6  x0000       +0       0   NUL |\n| R7  x0000       +0       0   NUL |\n+----------------+-----------------+\n|    PC x300D    |   CC POSITIVE   |\n+----------------+-----------------+\n" },
     .{ .name = "echo", .exit_code = 0, .stdout = "1\n" },
     .{ .name = "fibonacci", .exit_code = 55 },
     .{ .name = "greet", .exit_code = 0, .stdout = "Input> 1\n\nHello, 1\nOK\n" },
