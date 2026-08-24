@@ -159,6 +159,86 @@ void lc3_halt(void)
 	exit(0);
 }
 
+void lc3_putn(unsigned short word)
+{
+	if (!at_newline)
+	{
+		putchar('\n');
+		at_newline = 1;
+	}
+	printf("%u\n", word);
+	fflush(stdout);
+}
+
+void lc3_reg(
+	unsigned short r0,
+	unsigned short r1,
+	unsigned short r2,
+	unsigned short r3,
+	unsigned short r4,
+	unsigned short r5,
+	unsigned short r6,
+	unsigned short r7,
+	unsigned short pc,
+	unsigned short cc
+)
+{
+	// clang-format off
+	static const char *const ascii[128] = {
+		"NUL", "SOH", "STX", "ETX", "EOT", "ENQ", "ACK", "BEL",
+		" BS", " HT", " LF", " VT", " FF", " CR", " SO", " SI",
+		"DLE", "DC1", "DC2", "DC3", "DC4", "NAK", "SYN", "ETB",
+		"CAN", " EM", "SUB", "ESC", " FS", " GS", " RS", " US",
+		" SP", " ! ", " \" ", " # ", " $ ", " % ", " & ", " ' ",
+		" ( ", " ) ", " * ", " + ", " , ", " - ", " . ", " / ",
+		" 0 ", " 1 ", " 2 ", " 3 ", " 4 ", " 5 ", " 6 ", " 7 ",
+		" 8 ", " 9 ", " : ", " ; ", " < ", " = ", " > ", " ? ",
+		" @ ", " A ", " B ", " C ", " D ", " E ", " F ", " G ",
+		" H ", " I ", " J ", " K ", " L ", " M ", " N ", " O ",
+		" P ", " Q ", " R ", " S ", " T ", " U ", " V ", " W ",
+		" X ", " Y ", " Z ", " [ ", " \\ ", " ] ", " ^ ", " _ ",
+		" ` ", " a ", " b ", " c ", " d ", " e ", " f ", " g ",
+		" h ", " i ", " j ", " k ", " l ", " m ", " n ", " o ",
+		" p ", " q ", " r ", " s ", " t ", " u ", " v ", " w ",
+		" x ", " y ", " z ", " { ", " | ", " } ", " ~ ", "DEL",
+	};
+	// clang-format on
+
+	if (!at_newline)
+	{
+		putchar('\n');
+		at_newline = 1;
+	}
+
+	const char *cc_str;
+	if ((short)cc < 0)
+	{
+		cc_str = "NEGATIVE";
+	}
+	else if (cc == 0)
+	{
+		cc_str = "  ZERO  ";
+	}
+	else
+	{
+		cc_str = "POSITIVE";
+	}
+
+	unsigned short regs[8] = {r0, r1, r2, r3, r4, r5, r6, r7};
+	printf("+----------------------------------+\n");
+	printf("|       hex      int    uint   chr |\n");
+	for (int i = 0; i < 8; i++)
+	{
+		unsigned short r = regs[i];
+		const char *ch = (r < 128) ? ascii[r] : "---";
+		printf("| R%d  x%04X  %+7d  %6u   %s |\n", i, r, (short)r, r, ch);
+	}
+	printf("+----------------+-----------------+\n");
+	printf("|    PC x%04X    |   CC %s   |\n", pc, cc_str);
+	printf("+----------------+-----------------+\n");
+	fflush(stdout);
+}
+
 /*
  * like the emulator, output is left on a fresh line: a missing trailing
  * newline is added when the program terminates by any means

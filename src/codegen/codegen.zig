@@ -20,9 +20,9 @@ pub const Error = error{
 };
 
 /// native runtime functions for trap lowering
-pub const RuntimeFn = enum { getc, out, puts, in, putsp, halt };
+pub const RuntimeFn = enum { getc, out, puts, in, putsp, halt, putn, reg };
 
-const runtime_names = [_][*:0]const u8{ "lc3_getc", "lc3_out", "lc3_puts", "lc3_in", "lc3_putsp", "lc3_halt" };
+const runtime_names = [_][*:0]const u8{ "lc3_getc", "lc3_out", "lc3_puts", "lc3_in", "lc3_putsp", "lc3_halt", "lc3_putn", "lc3_reg" };
 
 /// llvm type of a native runtime function
 fn runtimeType(context: llvm.context.Context, which: RuntimeFn) bindings.TypeRef {
@@ -30,9 +30,10 @@ fn runtimeType(context: llvm.context.Context, which: RuntimeFn) bindings.TypeRef
     const pointer = llvm.types.pointer(context);
     return switch (which) {
         .getc, .in => llvm.types.function(word, &.{}),
-        .out => llvm.types.function(llvm.types.void_(context), &.{word}),
+        .out, .putn => llvm.types.function(llvm.types.void_(context), &.{word}),
         .puts, .putsp => llvm.types.function(llvm.types.void_(context), &.{ pointer, word }),
         .halt => llvm.types.function(llvm.types.void_(context), &.{}),
+        .reg => llvm.types.function(llvm.types.void_(context), &.{ word, word, word, word, word, word, word, word, word, word }),
     };
 }
 

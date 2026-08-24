@@ -54,7 +54,7 @@ pub fn lower(cg: *CodeGen, instruction: elk.Instruction, index: usize) codegen.E
             return true;
         },
 
-        .trap => |ops| return traps.lower(cg, ops.vect.value.immediate.integer),
+        .trap => |ops| return traps.lower(cg, ops.vect.value.immediate.integer, index),
 
         .lea => |ops| {
             const address = try resolvedAddress(cg, ops.src, index);

@@ -61,8 +61,11 @@ which is embedded into the compiler and linked into every executable:
 | `IN`    | x23    | Prompt with `Input> `, read and echo one character |
 | `PUTSP` | x24    | Like PUTS but two characters per word              |
 | `HALT`  | x25    | Flush output and exit 0                            |
+| `PUTN`  | x26    | Print R0 as an unsigned decimal with newline       |
+| `REG`   | x27    | Dump registers, PC, and condition codes            |
 
-Trap semantics follow ELK's emulator.
+Trap semantics follow ELK's emulator. `PUTN` and `REG` are debug extension
+traps.
 
 ## Build
 

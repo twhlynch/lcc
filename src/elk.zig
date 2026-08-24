@@ -11,9 +11,10 @@ pub const Traps = elk.Traps;
 pub const Policies = elk.Policies;
 pub const reporting = elk.reporting;
 
-/// standard traps only
+/// standard + debug traps (putn, reg)
 pub const standard_traps: Traps = .registerSets(&.{
     Traps.Standard,
+    Traps.Debug,
 });
 
 /// baseline policies

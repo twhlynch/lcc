@@ -2,6 +2,7 @@
 
 const std = @import("std");
 const codegen = @import("codegen.zig");
+const bindings = @import("../llvmc/root.zig").bindings;
 
 const CodeGen = codegen.CodeGen;
 
@@ -13,10 +14,12 @@ pub const Vect = struct {
     pub const in: u8 = 0x23;
     pub const putsp: u8 = 0x24;
     pub const halt: u8 = 0x25;
+    pub const putn: u8 = 0x26;
+    pub const reg: u8 = 0x27;
 };
 
 /// lowers one trap; returns whether the block terminated
-pub fn lower(cg: *CodeGen, vect: u8) codegen.Error!bool {
+pub fn lower(cg: *CodeGen, vect: u8, index: usize) codegen.Error!bool {
     switch (vect) {
         Vect.getc => {
             // elk does not update the condition code on getc/in
@@ -46,6 +49,18 @@ pub fn lower(cg: *CodeGen, vect: u8) codegen.Error!bool {
             // lc3_halt does not return
             _ = cg.builder.buildUnreachable();
             return true;
+        },
+        Vect.putn => {
+            _ = cg.callRuntime(.putn, &.{cg.loadReg(0)});
+            return false;
+        },
+        Vect.reg => {
+            var args: [10]bindings.ValueRef = undefined;
+            inline for (0..8) |i| args[i] = cg.loadReg(@intCast(i));
+            args[8] = cg.pcValue(index);
+            args[9] = cg.loadCc();
+            _ = cg.callRuntime(.reg, &args);
+            return false;
         },
         else => {
             std.log.err("trap vector x{X:0>2} has no native equivalent", .{vect});
