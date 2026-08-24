@@ -5,8 +5,6 @@ const std = @import("std");
 const compiler = @import("compiler.zig");
 const elk = compiler.elk;
 
-const version = "0.1.0";
-
 test {
     _ = @import("tests.zig");
 }
@@ -22,6 +20,13 @@ const usage =
     \\  -emit-llvm       Print optimised LLVM IR
     \\  --version        Print version information
     \\  -h, --help       Show this help
+    \\
+;
+
+const version =
+    \\ lcc 0.1.0
+    \\ Copyright (C) 2026 Tom Lynch
+    \\ License GPL-3.0
     \\
 ;
 
@@ -64,7 +69,7 @@ fn parseArgs(
             try out.writeAll(usage);
             return .help;
         } else if (std.mem.eql(u8, arg, "--version")) {
-            try out.print("lcc {s}\n", .{version});
+            try out.writeAll(version);
             return .version;
         } else if (std.mem.eql(u8, arg, "-o")) {
             i += 1;
