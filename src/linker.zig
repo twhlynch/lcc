@@ -24,7 +24,7 @@ pub fn link(
     const clang = findClang(gpa, io, environ_map) orelse return error.ClangNotFound;
     defer gpa.free(clang);
 
-    var argv: [11][]const u8 = undefined;
+    var argv: [12][]const u8 = undefined;
     var argc: usize = 0;
     argv[argc] = clang;
     argc += 1;
@@ -43,6 +43,11 @@ pub fn link(
     argv[argc + 6] = gcFlag(triple);
     argc += 7;
 
+    if (!isDarwin(triple)) {
+        argv[argc] = "-no-pie";
+        argc += 1;
+    }
+
     var child = std.process.spawn(io, .{
         .argv = argv[0..argc],
         .stdout = .inherit,
@@ -59,14 +64,15 @@ pub fn link(
 
 /// linker flag that strips unreferenced sections
 fn gcFlag(triple: ?[]const u8) []const u8 {
-    const darwin = if (triple) |t|
-        std.mem.indexOf(u8, t, "darwin") != null or
-            std.mem.indexOf(u8, t, "macos") != null or
-            std.mem.indexOf(u8, t, "ios") != null
-    else
-        @import("builtin").os.tag.isDarwin();
+    return if (isDarwin(triple)) "-Wl,-dead_strip" else "-Wl,--gc-sections";
+}
 
-    return if (darwin) "-Wl,-dead_strip" else "-Wl,--gc-sections";
+fn isDarwin(triple: ?[]const u8) bool {
+    if (triple) |t|
+        return std.mem.indexOf(u8, t, "darwin") != null or
+            std.mem.indexOf(u8, t, "macos") != null or
+            std.mem.indexOf(u8, t, "ios") != null;
+    return @import("builtin").os.tag.isDarwin();
 }
 
 fn findClang(

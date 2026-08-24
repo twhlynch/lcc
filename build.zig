@@ -24,10 +24,14 @@ pub fn build(b: *std.Build) void {
     });
     linkLlvm(root_module, llvm);
 
+    const use_lld = isDarwin(b) == false;
+
     // main executable
     const exe = b.addExecutable(.{
         .name = "lcc",
         .root_module = root_module,
+        .use_llvm = true,
+        .use_lld = use_lld,
     });
     b.installArtifact(exe);
 
@@ -52,7 +56,11 @@ pub fn build(b: *std.Build) void {
     linkLlvm(test_mod, llvm);
 
     // test
-    const unit_tests = b.addTest(.{ .root_module = test_mod });
+    const unit_tests = b.addTest(.{
+        .root_module = test_mod,
+        .use_llvm = true,
+        .use_lld = use_lld,
+    });
     const run_unit_tests = b.addRunArtifact(unit_tests);
     run_unit_tests.has_side_effects = true;
     run_unit_tests.step.dependOn(b.getInstallStep());
