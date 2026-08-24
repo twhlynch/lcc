@@ -126,7 +126,7 @@ const Diagnostics = struct {
 
     fn init(diags: *Diagnostics, io: std.Io) void {
         diags.stderr_writer = std.Io.File.stderr().writer(io, &diags.stderr_buffer);
-        diags.fancy_sink = .new(&diags.stderr_writer.interface);
+        diags.fancy_sink = .new(&diags.stderr_writer.interface, true);
         diags.reporter = .new(diags.fancy_sink.interface());
     }
 
