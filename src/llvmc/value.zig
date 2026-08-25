@@ -8,7 +8,7 @@ const type_mod = @import("type.zig");
 pub fn constInt(ty: bindings.TypeRef, value: i64) bindings.ValueRef {
     return bindings.LLVMConstInt(
         ty,
-        @bitCast(@as(i64, value)),
+        @bitCast(value),
         // sign-extend negative constants to the target width
         @intFromBool(value < 0),
     );
