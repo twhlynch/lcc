@@ -55,6 +55,7 @@ pub fn build(b: *std.Build) void {
         .link_libc = true,
         .imports = &.{
             .{ .name = "elk", .module = elk_mod },
+            .{ .name = "zilc", .module = zilc_mod },
         },
     });
     linkLlvm(test_mod, llvm);
