@@ -63,8 +63,18 @@ pub fn assembleFile(
 }
 
 /// scratch locations for temp object file and runtime source
-const obj_scratch_path = ".lcc-tmp.o";
-const rt_scratch_path = ".lcc-tmp-rt.c";
+var obj_scratch_buf: [64]u8 = undefined;
+var rt_scratch_buf: [64]u8 = undefined;
+
+fn initScratchPaths(source_path: ?[]const u8) struct { obj: []const u8, rt: []const u8 } {
+    const stem = if (source_path) |p|
+        std.fs.path.basename(p)
+    else
+        "lcc-tmp";
+    const obj = std.fmt.bufPrint(&obj_scratch_buf, ".{s}.o", .{stem}) catch "lcc-tmp.o";
+    const rt = std.fmt.bufPrint(&rt_scratch_buf, ".{s}.c", .{stem}) catch "lcc-tmp.c";
+    return .{ .obj = obj, .rt = rt };
+}
 
 /// native trap runtime, written next to the object file at link time
 const runtime_source = @embedFile("runtime/lc3_runtime.c");
@@ -147,15 +157,17 @@ pub fn compileAndLink(
     const object = try machine.emitObjectAlloc(gpa, output.module);
     defer gpa.free(object);
 
-    try writeScratch(io, obj_scratch_path, object);
-    errdefer std.Io.Dir.cwd().deleteFile(io, obj_scratch_path) catch {};
-    try writeScratch(io, rt_scratch_path, runtime_source);
-    errdefer std.Io.Dir.cwd().deleteFile(io, rt_scratch_path) catch {};
+    const scratch = initScratchPaths(program.source.path);
 
-    try linker.link(io, gpa, environ_map, obj_scratch_path, rt_scratch_path, triple, output_path);
+    try writeScratch(io, scratch.obj, object);
+    errdefer std.Io.Dir.cwd().deleteFile(io, scratch.obj) catch {};
+    try writeScratch(io, scratch.rt, runtime_source);
+    errdefer std.Io.Dir.cwd().deleteFile(io, scratch.rt) catch {};
 
-    std.Io.Dir.cwd().deleteFile(io, obj_scratch_path) catch {};
-    std.Io.Dir.cwd().deleteFile(io, rt_scratch_path) catch {};
+    try linker.link(io, gpa, environ_map, scratch.obj, scratch.rt, triple, output_path);
+
+    std.Io.Dir.cwd().deleteFile(io, scratch.obj) catch {};
+    std.Io.Dir.cwd().deleteFile(io, scratch.rt) catch {};
 }
 
 fn codeGenLevel(level: llvm.pass.Level) llvm.bindings.CodeGenOptLevel {
