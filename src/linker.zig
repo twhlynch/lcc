@@ -54,7 +54,10 @@ pub fn link(
         .stderr = .inherit,
     }) catch return error.LinkFailed;
 
-    const term = child.wait(io) catch return error.LinkFailed;
+    const term = child.wait(io) catch {
+        _ = child.kill(io);
+        return error.LinkFailed;
+    };
 
     switch (term) {
         .exited => |code| if (code != 0) return error.LinkFailed,
