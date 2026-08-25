@@ -94,3 +94,8 @@ git clone https://codeberg.org/dxrcy/elk
 cd elk && zig build -Doptimize=ReleaseFast
 sudo cp zig-out/bin/elk /usr/local/bin/
 ```
+
+## Semantic differences from LC-3
+
+lcc is not an emulator. Some behaviors differ from the LC3 standard. See
+[docs/behaviour.md](docs/behaviour.md) for details.
