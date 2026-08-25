@@ -112,7 +112,6 @@ fn findClang(
 
 fn findIn(gpa: std.mem.Allocator, io: std.Io, dir: []const u8) ?[]u8 {
     const path = std.fmt.allocPrint(gpa, "{s}/clang", .{dir}) catch return null;
-    errdefer gpa.free(path);
 
     std.Io.Dir.cwd().access(io, path, .{ .execute = true }) catch {
         gpa.free(path);
