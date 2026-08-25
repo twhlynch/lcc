@@ -1,6 +1,7 @@
 //! compiler pipeline
 
 const std = @import("std");
+const args = @import("args.zig");
 pub const elk = @import("elk.zig");
 pub const codegen = @import("codegen/codegen.zig");
 pub const linker = @import("linker.zig");
@@ -168,6 +169,16 @@ pub fn compileAndLink(
 
     std.Io.Dir.cwd().deleteFile(io, scratch.obj) catch {};
     std.Io.Dir.cwd().deleteFile(io, scratch.rt) catch {};
+}
+
+pub fn optimizeLevel(level: args.Optimize) llvm.pass.Level {
+    return switch (level) {
+        .none => .none,
+        .@"0" => .o0,
+        .@"1" => .o1,
+        .@"2" => .o2,
+        .@"3" => .o3,
+    };
 }
 
 fn codeGenLevel(level: llvm.pass.Level) llvm.bindings.CodeGenOptLevel {

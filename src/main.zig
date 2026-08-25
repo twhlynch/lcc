@@ -110,7 +110,7 @@ pub fn main(init: std.process.Init) !u8 {
         &program,
         init.environ_map,
         options.output orelse defaultOutput(options.input),
-        @enumFromInt(@intFromEnum(options.optimize)),
+        compiler.optimizeLevel(options.optimize),
         options.emit_llvm,
         triple,
     ) catch |err| switch (err) {
