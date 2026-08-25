@@ -73,17 +73,12 @@ pub fn main(init: std.process.Init) !u8 {
     var cli_args = try zilc.collectArgs(args_allocator, init.minimal.args);
     defer cli_args.deinit(init.arena.allocator());
 
-    const parsed = blk: {
-        var temp_arena = std.heap.ArenaAllocator.init(gpa);
-        defer temp_arena.deinit();
-        break :blk args.parse(gpa, temp_arena.allocator(), cli_args.items, out) catch |err|
-            switch (err) {
-                error.Usage, error.ParseFailed, error.InvalidValue => {
-                    try out.flush();
-                    return 2;
-                },
-                else => |other| return other,
-            };
+    const parsed = args.parse(gpa, gpa, cli_args.items, out) catch |err| switch (err) {
+        error.Usage, error.ParseFailed, error.InvalidValue => {
+            try out.flush();
+            return 2;
+        },
+        else => |other| return other,
     };
     try out.flush();
     const options = switch (parsed) {
