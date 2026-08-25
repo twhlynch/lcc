@@ -46,7 +46,7 @@ pub const Module = struct {
         message: *?[]u8,
     ) VerifyError!void {
         var raw: ?[*:0]u8 = null;
-        if (bindings.LLVMVerifyModule(module.ref, .print_message, &raw) != 0) {
+        if (bindings.LLVMVerifyModule(module.ref, .return_status, &raw) != 0) {
             if (raw) |msg| {
                 defer bindings.LLVMDisposeMessage(msg);
                 message.* = try gpa.dupe(u8, std.mem.span(msg));
