@@ -111,7 +111,10 @@ pub fn parseArgs(gpa: std.mem.Allocator, arena: std.mem.Allocator, args: []const
 
     const options: zilc.Options(template) = try .parse(gpa, arena, args, parse_config);
 
-    const input = try options.getPos(gpa, zilc.types.string, .input, 0);
+    const input = options.getPos(gpa, zilc.types.string, .input, 0) catch {
+        std.log.err("missing input file", .{});
+        return error.Usage;
+    };
     if (options.pos.items.len > 1) {
         std.log.err("unexpected argument '{s}'", .{options.pos.items[1]});
         return error.Usage;
@@ -194,7 +197,7 @@ pub fn main(init: std.process.Init) !u8 {
         defer temp_arena.deinit();
         break :blk parseArgs(gpa, temp_arena.allocator(), args.items, out) catch |err|
             switch (err) {
-                error.Usage => {
+                error.Usage, error.ParseFailed, error.InvalidValue => {
                     try out.flush();
                     return 2;
                 },
