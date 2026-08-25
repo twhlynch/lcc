@@ -33,7 +33,7 @@ static void restore_terminal(void);
  */
 __attribute__((constructor)) static void runtime_init(void)
 {
-	atexit(finish_newline);
+	(void)atexit(finish_newline);
 
 #if defined(LCC_POSIX)
 	int istty = isatty(STDIN_FILENO);
@@ -46,7 +46,7 @@ __attribute__((constructor)) static void runtime_init(void)
 			if (tcsetattr(STDIN_FILENO, TCSANOW, &raw) == 0)
 			{
 				tty_restore_pending = 1;
-				atexit(restore_terminal);
+				(void)atexit(restore_terminal);
 			}
 		}
 	}
@@ -58,7 +58,7 @@ static void restore_terminal(void)
 {
 	if (tty_restore_pending)
 	{
-		tcsetattr(STDIN_FILENO, TCSANOW, &saved_termios);
+		(void)tcsetattr(STDIN_FILENO, TCSANOW, &saved_termios);
 		tty_restore_pending = 0;
 	}
 }
@@ -66,13 +66,13 @@ static void restore_terminal(void)
 
 static int read_byte(void)
 {
-	fflush(stdout);
+	(void)fflush(stdout);
 	return getchar();
 }
 
 static void emit(unsigned char c)
 {
-	putchar(c);
+	(void)putchar(c);
 	at_newline = c == '\n';
 }
 
@@ -89,7 +89,7 @@ unsigned short lc3_getc(void)
 void lc3_out(unsigned short word)
 {
 	emit(word & 0xFF);
-	fflush(stdout);
+	(void)fflush(stdout);
 }
 
 void lc3_puts(const unsigned short *memory, unsigned short address)
@@ -104,7 +104,7 @@ void lc3_puts(const unsigned short *memory, unsigned short address)
 		emit(c);
 		address = (unsigned short)(address + 1);
 	}
-	fflush(stdout);
+	(void)fflush(stdout);
 }
 
 unsigned short lc3_in(void)
@@ -115,7 +115,7 @@ unsigned short lc3_in(void)
 	{
 		emit('\n');
 	}
-	fputs("Input> ", stdout);
+	(void)fputs("Input> ", stdout);
 	at_newline = 0;
 
 	c = read_byte();
@@ -152,12 +152,12 @@ void lc3_putsp(const unsigned short *memory, unsigned short address)
 		emit(high);
 		address = (unsigned short)(address + 1);
 	}
-	fflush(stdout);
+	(void)fflush(stdout);
 }
 
 void lc3_halt(void)
 {
-	fflush(stdout);
+	(void)fflush(stdout);
 	exit(0);
 }
 
@@ -165,11 +165,11 @@ void lc3_putn(unsigned short word)
 {
 	if (!at_newline)
 	{
-		putchar('\n');
+		(void)putchar('\n');
 		at_newline = 1;
 	}
-	printf("%u\n", (unsigned int)word);
-	fflush(stdout);
+	(void)printf("%u\n", (unsigned int)word);
+	(void)fflush(stdout);
 }
 
 void lc3_reg(
@@ -208,7 +208,7 @@ void lc3_reg(
 
 	if (!at_newline)
 	{
-		putchar('\n');
+		(void)putchar('\n');
 		at_newline = 1;
 	}
 
@@ -227,18 +227,18 @@ void lc3_reg(
 	}
 
 	unsigned short regs[8] = {r0, r1, r2, r3, r4, r5, r6, r7};
-	printf("+----------------------------------+\n");
-	printf("|       hex      int    uint   chr |\n");
+	(void)printf("+----------------------------------+\n");
+	(void)printf("|       hex      int    uint   chr |\n");
 	for (int i = 0; i < 8; i++)
 	{
 		unsigned short r = regs[i];
 		const char *ch = (r < 128) ? ascii[r] : "---";
-		printf("| R%d  x%04X  %+7d  %6u   %s |\n", i, (unsigned int)r, (short)r, (unsigned int)r, ch);
+		(void)printf("| R%d  x%04X  %+7d  %6u   %s |\n", i, (unsigned int)r, (short)r, (unsigned int)r, ch);
 	}
-	printf("+----------------+-----------------+\n");
-	printf("|    PC x%04X    |   CC %s   |\n", (unsigned int)pc, cc_str);
-	printf("+----------------+-----------------+\n");
-	fflush(stdout);
+	(void)printf("+----------------+-----------------+\n");
+	(void)printf("|    PC x%04X    |   CC %s   |\n", (unsigned int)pc, cc_str);
+	(void)printf("+----------------+-----------------+\n");
+	(void)fflush(stdout);
 }
 
 /*
@@ -249,6 +249,7 @@ static void finish_newline(void)
 {
 	if (!at_newline)
 	{
-		putchar('\n');
+		(void)putchar('\n');
 	}
+	(void)fflush(stdout);
 }
