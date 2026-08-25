@@ -158,9 +158,8 @@ pub fn main(init: std.process.Init) !u8 {
 /// lcc foo.asm -> foo
 fn defaultOutput(input: []const u8) []const u8 {
     const basename = std.fs.path.basename(input);
-    const stem = if (std.fs.path.extension(basename).len > 0)
-        basename[0 .. basename.len - std.fs.path.extension(basename).len]
-    else
-        basename;
-    return stem;
+    const ext = std.fs.path.extension(basename);
+    if (ext.len > 0 and ext.len < basename.len)
+        return basename[0 .. basename.len - ext.len];
+    return "a.out";
 }
