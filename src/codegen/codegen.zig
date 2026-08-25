@@ -176,8 +176,8 @@ pub const CodeGen = struct {
             cg.builder.positionAtEnd(cg.blocks[i]);
             switch (line.statement) {
                 .raw_word => {
-                    // executing a data word traps
-                    _ = cg.builder.buildUnreachable();
+                    // data words are always treated as NOPs
+                    _ = cg.builder.buildBr(cg.blocks[i + 1]);
                     continue;
                 },
                 .instruction => |inst| {
