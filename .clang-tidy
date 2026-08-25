@@ -1,0 +1,16 @@
+Checks: >
+    -*,
+
+    bugprone-*,
+    clang-analyzer-*,
+    concurrency-*,
+    misc-*,
+    performance-*,
+    portability-*,
+    readability-*,
+    modernize-*,
+    cert-*,
+
+    -concurrency-mt-unsafe,
+    -readability-identifier-length,
+    -bugprone-easily-swappable-parameters
