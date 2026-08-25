@@ -84,10 +84,6 @@ pub const CodeGen = struct {
         gpa: std.mem.Allocator,
     ) Error!Output {
         const context = llvm.context.Context.create();
-        var output: Output = .{ .context = context, .module = undefined, .builder = undefined };
-        errdefer output.deinit();
-
-        output.module = llvm.module.Module.create("lcc", context);
 
         const line_count = air.lines.items.len;
 
@@ -95,7 +91,11 @@ pub const CodeGen = struct {
         defer gpa.free(blocks);
 
         const builder = llvm.builder.Builder.create(context);
-        output.builder = builder;
+
+        var output: Output = .{ .context = context, .module = undefined, .builder = builder };
+        errdefer output.deinit();
+
+        output.module = llvm.module.Module.create("lcc", context);
 
         var cg: CodeGen = .{
             .air = air,
