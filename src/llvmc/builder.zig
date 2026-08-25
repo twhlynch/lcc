@@ -18,7 +18,7 @@ pub const Builder = struct {
     }
 
     pub fn dispose(builder: Builder) void {
-        _ = builder;
+        bindings.LLVMDisposeBuilder(builder.ref);
     }
 
     pub fn positionAtEnd(builder: Builder, block: bindings.BasicBlockRef) void {

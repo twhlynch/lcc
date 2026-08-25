@@ -42,8 +42,10 @@ fn runtimeType(context: llvm.context.Context, which: RuntimeFn) bindings.TypeRef
 pub const Output = struct {
     context: llvm.context.Context,
     module: llvm.module.Module,
+    builder: llvm.builder.Builder,
 
     pub fn deinit(output: Output) void {
+        output.builder.dispose();
         output.module.dispose();
         output.context.dispose();
     }
@@ -82,7 +84,7 @@ pub const CodeGen = struct {
         gpa: std.mem.Allocator,
     ) Error!Output {
         const context = llvm.context.Context.create();
-        var output: Output = .{ .context = context, .module = undefined };
+        var output: Output = .{ .context = context, .module = undefined, .builder = undefined };
         errdefer output.deinit();
 
         output.module = llvm.module.Module.create("lcc", context);
@@ -92,10 +94,13 @@ pub const CodeGen = struct {
         var blocks = try gpa.alloc(bindings.BasicBlockRef, line_count + 1);
         defer gpa.free(blocks);
 
+        const builder = llvm.builder.Builder.create(context);
+        output.builder = builder;
+
         var cg: CodeGen = .{
             .air = air,
             .module = output.module,
-            .builder = llvm.builder.Builder.create(context),
+            .builder = builder,
             .gpa = gpa,
             .word_type = llvm.types.int16(context),
             .memory_global = undefined,

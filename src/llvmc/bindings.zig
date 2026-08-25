@@ -97,6 +97,7 @@ pub extern fn LLVMConstNull(Ty: TypeRef) ValueRef;
 // builder
 pub extern fn LLVMAppendBasicBlockInContext(C: ContextRef, Fn: ValueRef, Name: [*:0]const u8) BasicBlockRef;
 pub extern fn LLVMCreateBuilderInContext(C: ContextRef) BuilderRef;
+pub extern fn LLVMDisposeBuilder(Builder: BuilderRef) void;
 pub extern fn LLVMPositionBuilderAtEnd(Builder: BuilderRef, Block: BasicBlockRef) void;
 pub extern fn LLVMBuildRet(Builder: BuilderRef, V: ValueRef) ValueRef;
 pub extern fn LLVMBuildBr(Builder: BuilderRef, Dest: BasicBlockRef) ValueRef;
