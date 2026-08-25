@@ -159,10 +159,10 @@ pub fn compileAndLink(
 
     const scratch = initScratchPaths(program.source.path);
 
-    try writeScratch(io, scratch.obj, object);
     errdefer std.Io.Dir.cwd().deleteFile(io, scratch.obj) catch {};
-    try writeScratch(io, scratch.rt, runtime_source);
+    try writeScratch(io, scratch.obj, object);
     errdefer std.Io.Dir.cwd().deleteFile(io, scratch.rt) catch {};
+    try writeScratch(io, scratch.rt, runtime_source);
 
     try linker.link(io, gpa, environ_map, scratch.obj, scratch.rt, triple, output_path);
 
