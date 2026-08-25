@@ -52,7 +52,10 @@ pub fn link(
         .argv = argv[0..argc],
         .stdout = .inherit,
         .stderr = .inherit,
-    }) catch return error.LinkFailed;
+    }) catch |err| {
+        std.log.err("failed to spawn clang: {s}", .{@errorName(err)});
+        return error.LinkFailed;
+    };
 
     const term = child.wait(io) catch {
         _ = child.kill(io);
@@ -60,8 +63,14 @@ pub fn link(
     };
 
     switch (term) {
-        .exited => |code| if (code != 0) return error.LinkFailed,
-        else => return error.LinkFailed,
+        .exited => |code| if (code != 0) {
+            std.log.err("clang exited with code {d}", .{code});
+            return error.LinkFailed;
+        },
+        else => |term_type| {
+            std.log.err("clang terminated by signal: {s}", .{@tagName(term_type)});
+            return error.LinkFailed;
+        },
     }
 }
 
