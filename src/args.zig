@@ -120,3 +120,77 @@ pub fn parse(gpa: std.mem.Allocator, arena: std.mem.Allocator, args: []const []c
         .arch = options.flags.arch,
     } };
 }
+
+test parse {
+    const expect = std.testing.expect;
+    const expectEqual = std.testing.expectEqual;
+    const expectEqualStrings = std.testing.expectEqualStrings;
+
+    const testParse = struct {
+        fn testParse(args: []const []const u8) !Result {
+            var buf: [4096]u8 = undefined;
+            var fbs = std.io.fixedBufferStream(&buf);
+            var writer = std.Io.Writer{ .interface = .{
+                .context = @ptrCast(&fbs),
+                .writeFn = @ptrCast(&std.io.FixedBufferStream([]u8).write),
+            } };
+            return parse(std.testing.allocator, std.testing.allocator, args, &writer);
+        }
+    }.testParse;
+
+    // meta: help and version
+    try expectEqual(.help, try testParse(&.{}));
+    try expectEqual(.help, try testParse(&.{"--help"}));
+    try expectEqual(.help, try testParse(&.{"-h"}));
+    try expectEqual(.version, try testParse(&.{"--version"}));
+    try expectEqual(.version, try testParse(&.{"-v"}));
+
+    // meta: extra args ignored
+    try expectEqual(.help, try testParse(&.{ "--help", "file.asm" }));
+    try expectEqual(.version, try testParse(&.{ "-v", "file.asm" }));
+
+    // basic compile
+    {
+        const r = (try testParse(&.{"file.asm"})).run;
+        try expectEqualStrings("file.asm", r.input);
+        try expectEqual(.@"0", r.optimize);
+        try expect(!r.emit_llvm);
+    }
+
+    // -o flag
+    {
+        const r = (try testParse(&.{ "-o", "out", "file.asm" })).run;
+        try expectEqualStrings("out", r.output.?);
+    }
+
+    // -O flags: joined value
+    try expectEqual(.@"0", (try testParse(&.{ "-O0", "f" })).run.optimize);
+    try expectEqual(.@"1", (try testParse(&.{ "-O1", "f" })).run.optimize);
+    try expectEqual(.@"2", (try testParse(&.{ "-O2", "f" })).run.optimize);
+    try expectEqual(.@"3", (try testParse(&.{ "-O3", "f" })).run.optimize);
+    try expectEqual(.none, (try testParse(&.{ "-Onone", "f" })).run.optimize);
+
+    // -O flag: separate value
+    try expectEqual(.@"2", (try testParse(&.{ "-O", "2", "f" })).run.optimize);
+
+    // -emit-llvm
+    try expect((try testParse(&.{ "-emit-llvm", "f" })).run.emit_llvm);
+
+    // -target
+    try expectEqualStrings("x86_64-linux-gnu", (try testParse(&.{ "-target", "x86_64-linux-gnu", "f" })).run.target.?);
+
+    // -arch
+    try expectEqualStrings("x86_64", (try testParse(&.{ "-arch", "x86_64", "f" })).run.arch.?);
+
+    // combined flags
+    {
+        const r = (try testParse(&.{ "-o", "out", "-O2", "-emit-llvm", "-arch", "arm64", "f" })).run;
+        try expectEqualStrings("out", r.output.?);
+        try expectEqual(.@"2", r.optimize);
+        try expect(r.emit_llvm);
+        try expectEqualStrings("arm64", r.arch.?);
+    }
+
+    // end-of-options marker
+    try expectEqualStrings("file.asm", (try testParse(&.{ "--", "file.asm" })).run.input);
+}
