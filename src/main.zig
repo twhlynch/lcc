@@ -54,8 +54,6 @@ const ParsedArgs = union(enum) {
     run: Options,
 };
 
-const ArgsError = error{Usage} || std.Io.Writer.Error;
-
 const template = .{
     .output = zilc.Flag{
         .short = 'o',
@@ -80,6 +78,11 @@ const template = .{
     },
 };
 
+const parse_config: zilc.ParseConfig = .{
+    .single_dash_long = true,
+    .joined_short_value = true,
+};
+
 fn parseOptimize(dest: *anyopaque, src: []const u8, _: std.mem.Allocator) !void {
     const optimize: *?Optimize = @ptrCast(@alignCast(dest));
     if (std.mem.eql(u8, src, "none")) {
@@ -92,14 +95,8 @@ fn parseOptimize(dest: *anyopaque, src: []const u8, _: std.mem.Allocator) !void 
     }
 }
 
-fn getMetaArg(args: []const []const u8) ?zilc.MetaArg {
-    if (args.len == 0)
-        return .help;
-    return zilc.getMetaArg(args);
-}
-
 pub fn parseArgs(gpa: std.mem.Allocator, arena: std.mem.Allocator, args: []const []const u8, out: *std.Io.Writer) !ParsedArgs {
-    if (getMetaArg(args)) |meta| {
+    if (zilc.getMetaArg(args, .help)) |meta| {
         switch (meta) {
             .help => {
                 try out.writeAll(usage);
@@ -112,7 +109,7 @@ pub fn parseArgs(gpa: std.mem.Allocator, arena: std.mem.Allocator, args: []const
         }
     }
 
-    const options: zilc.Options(template) = try .parse(gpa, arena, args);
+    const options: zilc.Options(template) = try .parse(gpa, arena, args, parse_config);
 
     const input = try options.getPos(gpa, zilc.types.string, .input, 0);
     if (options.pos.items.len > 1) {
