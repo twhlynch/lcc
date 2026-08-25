@@ -94,14 +94,15 @@ void lc3_out(unsigned short word)
 
 void lc3_puts(const unsigned short *memory, unsigned short address)
 {
-	for (;;)
+	for (int i = 0; i <= 0xFFFF; i++)
 	{
-		unsigned char c = memory[address++] & 0xFF;
+		unsigned char c = memory[address] & 0xFF;
 		if (c == 0x00)
 		{
 			break;
 		}
 		emit(c);
+		address = (unsigned short)(address + 1);
 	}
 	fflush(stdout);
 }
@@ -134,9 +135,9 @@ unsigned short lc3_in(void)
 
 void lc3_putsp(const unsigned short *memory, unsigned short address)
 {
-	for (;;)
+	for (int i = 0; i <= 0xFFFF; i++)
 	{
-		unsigned short word = memory[address++];
+		unsigned short word = memory[address];
 		unsigned char low = word & 0xFF;
 		unsigned char high = word >> 8;
 		if (low == 0x00)
@@ -149,6 +150,7 @@ void lc3_putsp(const unsigned short *memory, unsigned short address)
 			break;
 		}
 		emit(high);
+		address = (unsigned short)(address + 1);
 	}
 	fflush(stdout);
 }
