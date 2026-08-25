@@ -116,7 +116,6 @@ unsigned short lc3_in(void)
 		emit('\n');
 	}
 	fputs("Input> ", stdout);
-	fflush(stdout);
 
 	c = read_byte();
 	if (c == EOF)
