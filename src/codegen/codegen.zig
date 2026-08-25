@@ -268,7 +268,6 @@ pub const CodeGen = struct {
         which: RuntimeFn,
         args: []const bindings.ValueRef,
     ) bindings.ValueRef {
-        // void calls must not be named
         return cg.builder.buildCall(
             cg.runtime_fns[@intFromEnum(which)],
             args,

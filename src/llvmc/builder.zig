@@ -145,7 +145,7 @@ pub const Builder = struct {
     }
 };
 
-/// copies name without the leading % as NULL terminated storage
+/// copies name as NULL terminated storage, truncating at 31 chars
 fn nameZ(buffer: *[32]u8, name: []const u8) [*:0]const u8 {
     const trimmed = name[0..@min(name.len, buffer.len - 1)];
     @memcpy(buffer[0..trimmed.len], trimmed);

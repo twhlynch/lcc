@@ -37,7 +37,7 @@ pub const TargetMachine = struct {
             .default,
         );
 
-        // keep an owned copy, the C API string is disposed above.
+        // keep an owned copy; the caller frees the original triple.
         const triple_copy: [:0]u8 = std.heap.c_allocator.dupeZ(u8, std.mem.span(triple)) catch {
             bindings.LLVMDisposeTargetMachine(ref);
             return error.EmissionFailed;
