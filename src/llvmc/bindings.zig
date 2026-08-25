@@ -76,8 +76,6 @@ pub extern fn LLVMPrintModuleToString(M: ModuleRef) [*:0]u8;
 pub extern fn LLVMVerifyModule(M: ModuleRef, Action: VerifierFailureAction, OutMessage: *?[*:0]u8) LLVMBool;
 
 // types
-pub extern fn LLVMInt1TypeInContext(C: ContextRef) TypeRef;
-pub extern fn LLVMInt8TypeInContext(C: ContextRef) TypeRef;
 pub extern fn LLVMInt16TypeInContext(C: ContextRef) TypeRef;
 pub extern fn LLVMInt32TypeInContext(C: ContextRef) TypeRef;
 pub extern fn LLVMVoidTypeInContext(C: ContextRef) TypeRef;
@@ -87,7 +85,6 @@ pub extern fn LLVMFunctionType(ReturnType: TypeRef, ParamTypes: ?[*]const TypeRe
 
 // values
 pub extern fn LLVMAddFunction(M: ModuleRef, Name: [*:0]const u8, FunctionTy: TypeRef) ValueRef;
-pub extern fn LLVMGetNamedFunction(M: ModuleRef, Name: [*:0]const u8) ValueRef;
 pub extern fn LLVMGlobalGetValueType(Global: ValueRef) TypeRef;
 pub extern fn LLVMAddGlobal(M: ModuleRef, Ty: TypeRef, Name: [*:0]const u8) ValueRef;
 pub extern fn LLVMSetInitializer(GlobalVar: ValueRef, ConstantVal: ValueRef) void;
@@ -132,39 +129,6 @@ pub extern fn LLVMCreateTargetMachine(
 pub extern fn LLVMDisposeTargetMachine(T: TargetMachineRef) void;
 pub extern fn LLVMCreateTargetDataLayout(TM: TargetMachineRef) TargetDataRef;
 pub extern fn LLVMDisposeTargetData(DL: TargetDataRef) void;
-
-// target registration
-pub extern fn LLVMInitializeAArch64TargetInfo() void;
-pub extern fn LLVMInitializeAArch64Target() void;
-pub extern fn LLVMInitializeAArch64TargetMC() void;
-pub extern fn LLVMInitializeAArch64AsmPrinter() void;
-pub extern fn LLVMInitializeAArch64AsmParser() void;
-pub extern fn LLVMInitializeX86TargetInfo() void;
-pub extern fn LLVMInitializeX86Target() void;
-pub extern fn LLVMInitializeX86TargetMC() void;
-pub extern fn LLVMInitializeX86AsmPrinter() void;
-pub extern fn LLVMInitializeX86AsmParser() void;
-
-/// registers target information for the host architecture
-pub fn initializeNativeTarget(arch: std.Target.Cpu.Arch) void {
-    switch (arch) {
-        .aarch64 => {
-            LLVMInitializeAArch64TargetInfo();
-            LLVMInitializeAArch64Target();
-            LLVMInitializeAArch64TargetMC();
-            LLVMInitializeAArch64AsmPrinter();
-            LLVMInitializeAArch64AsmParser();
-        },
-        .x86_64 => {
-            LLVMInitializeX86TargetInfo();
-            LLVMInitializeX86Target();
-            LLVMInitializeX86TargetMC();
-            LLVMInitializeX86AsmPrinter();
-            LLVMInitializeX86AsmParser();
-        },
-        else => std.debug.panic("no registered LLVM backend for {s}", .{@tagName(arch)}),
-    }
-}
 
 // object emission
 pub extern fn LLVMTargetMachineEmitToMemoryBuffer(
