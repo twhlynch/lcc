@@ -15,6 +15,12 @@
 #include <unistd.h>
 #endif
 
+#define BYTE_BITS 8
+#define MEMORY_SIZE 0x10000
+#define REGISTER_COUNT 8
+#define BYTE_MASK 0xFF
+#define ASCII_LIMIT 128
+
 /* tracks whether the last output byte was a newline */
 static int at_newline = 1;
 
@@ -88,16 +94,16 @@ unsigned short lc3_getc(void)
 
 void lc3_out(unsigned short word)
 {
-	emit(word & 0xFF);
+	emit(word & BYTE_MASK);
 	(void)fflush(stdout);
 }
 
 void lc3_puts(const unsigned short *memory, unsigned short address)
 {
-	for (int i = 0; i <= 0xFFFF; i++)
+	for (int i = 0; i < MEMORY_SIZE; i++)
 	{
-		unsigned char c = memory[address] & 0xFF;
-		if (c == 0x00)
+		unsigned char c = memory[address] & BYTE_MASK;
+		if (c == '\0')
 		{
 			break;
 		}
@@ -135,17 +141,17 @@ unsigned short lc3_in(void)
 
 void lc3_putsp(const unsigned short *memory, unsigned short address)
 {
-	for (int i = 0; i <= 0xFFFF; i++)
+	for (int i = 0; i < MEMORY_SIZE; i++)
 	{
 		unsigned short word = memory[address];
-		unsigned char low = word & 0xFF;
-		unsigned char high = word >> 8;
-		if (low == 0x00)
+		unsigned char low = word & BYTE_MASK;
+		unsigned char high = word >> BYTE_BITS;
+		if (low == '\0')
 		{
 			break;
 		}
 		emit(low);
-		if (high == 0x00)
+		if (high == '\0')
 		{
 			break;
 		}
@@ -186,7 +192,7 @@ void lc3_reg(
 )
 {
 	// clang-format off
-	static const char *const ascii[128] = {
+	static const char *const ascii[ASCII_LIMIT] = {
 		"NUL", "SOH", "STX", "ETX", "EOT", "ENQ", "ACK", "BEL",
 		" BS", " HT", " LF", " VT", " FF", " CR", " SO", " SI",
 		"DLE", "DC1", "DC2", "DC3", "DC4", "NAK", "SYN", "ETB",
@@ -226,13 +232,13 @@ void lc3_reg(
 		cc_str = "POSITIVE";
 	}
 
-	unsigned short regs[8] = {r0, r1, r2, r3, r4, r5, r6, r7};
+	unsigned short regs[REGISTER_COUNT] = {r0, r1, r2, r3, r4, r5, r6, r7};
 	(void)printf("+----------------------------------+\n");
 	(void)printf("|       hex      int    uint   chr |\n");
-	for (int i = 0; i < 8; i++)
+	for (int i = 0; i < REGISTER_COUNT; i++)
 	{
 		unsigned short r = regs[i];
-		const char *ch = (r < 128) ? ascii[r] : "---";
+		const char *ch = (r < ASCII_LIMIT) ? ascii[r] : "---";
 		(void)printf("| R%d  x%04X  %+7d  %6u   %s |\n", i, (unsigned int)r, (short)r, (unsigned int)r, ch);
 	}
 	(void)printf("+----------------+-----------------+\n");
