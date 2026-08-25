@@ -100,7 +100,8 @@ pub fn parse(gpa: std.mem.Allocator, arena: std.mem.Allocator, args: []const []c
         }
     }
 
-    const options: zilc.Options(template) = try .parse(gpa, arena, args, parse_config);
+    var options: zilc.Options(template) = try .parse(gpa, arena, args, parse_config);
+    defer options.deinit(arena);
 
     const input = options.getPos(gpa, zilc.types.string, .input, 0) catch {
         std.log.err("missing input file", .{});
