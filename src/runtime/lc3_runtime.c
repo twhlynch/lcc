@@ -166,7 +166,7 @@ void lc3_putn(unsigned short word)
 		putchar('\n');
 		at_newline = 1;
 	}
-	printf("%u\n", word);
+	printf("%u\n", (unsigned int)word);
 	fflush(stdout);
 }
 
@@ -231,10 +231,10 @@ void lc3_reg(
 	{
 		unsigned short r = regs[i];
 		const char *ch = (r < 128) ? ascii[r] : "---";
-		printf("| R%d  x%04X  %+7d  %6u   %s |\n", i, r, (short)r, r, ch);
+		printf("| R%d  x%04X  %+7d  %6u   %s |\n", i, (unsigned int)r, (short)r, (unsigned int)r, ch);
 	}
 	printf("+----------------+-----------------+\n");
-	printf("|    PC x%04X    |   CC %s   |\n", pc, cc_str);
+	printf("|    PC x%04X    |   CC %s   |\n", (unsigned int)pc, cc_str);
 	printf("+----------------+-----------------+\n");
 	fflush(stdout);
 }
