@@ -19,8 +19,7 @@ jobs:
             target: x86_64-linux
           - os: macos-latest
             target: aarch64-darwin
-          - os: macos-13
-            target: x86_64-darwin
+
     steps:
       - uses: actions/checkout@v7
 
@@ -69,5 +68,4 @@ jobs:
             --draft \
             --title "${{ github.ref_name }}" \
             artifacts/lcc-x86_64-linux/lcc-x86_64-linux \
-            artifacts/lcc-aarch64-darwin/lcc-aarch64-darwin \
-            artifacts/lcc-x86_64-darwin/lcc-x86_64-darwin
+            artifacts/lcc-aarch64-darwin/lcc-aarch64-darwin
