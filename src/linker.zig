@@ -59,6 +59,7 @@ pub fn link(
 
     const term = child.wait(io) catch {
         child.kill(io);
+        _ = child.wait(io) catch {};
         return error.LinkFailed;
     };
 
