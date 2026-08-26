@@ -4,7 +4,7 @@ const std = @import("std");
 pub const bindings = @import("bindings.zig");
 const module_mod = @import("module.zig");
 
-pub const TargetError = error{ UnknownTriple, EmissionFailed };
+pub const TargetError = error{ UnknownTriple, EmissionFailed, OutOfMemory };
 
 pub const Module = module_mod.Module;
 
@@ -40,7 +40,7 @@ pub const TargetMachine = struct {
         // keep an owned copy; the caller frees the original triple.
         const triple_copy: [:0]u8 = std.heap.c_allocator.dupeZ(u8, std.mem.span(triple)) catch {
             bindings.LLVMDisposeTargetMachine(ref);
-            return error.EmissionFailed;
+            return error.OutOfMemory;
         };
 
         return .{

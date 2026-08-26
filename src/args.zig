@@ -103,9 +103,9 @@ pub fn parse(gpa: std.mem.Allocator, arena: std.mem.Allocator, args: []const []c
     var options: zilc.Options(template) = try .parse(gpa, arena, args, parse_config);
     defer options.deinit(arena);
 
-    const input = options.getPos(gpa, zilc.types.string, .input, 0) catch {
-        std.log.err("missing input file", .{});
-        return error.Usage;
+    const input = options.getPos(gpa, zilc.types.string, .input, 0) catch |err| switch (err) {
+        error.OutOfMemory => return error.OutOfMemory,
+        else => return error.Usage,
     };
     if (options.pos.items.len > 1) {
         std.log.err("unexpected argument '{s}'", .{options.pos.items[1]});

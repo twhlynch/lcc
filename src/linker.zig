@@ -58,7 +58,7 @@ pub fn link(
     };
 
     const term = child.wait(io) catch {
-        _ = child.kill(io);
+        child.kill(io);
         return error.LinkFailed;
     };
 
@@ -67,8 +67,12 @@ pub fn link(
             std.log.err("clang exited with code {d}", .{code});
             return error.LinkFailed;
         },
+        .signal => |sig| {
+            std.log.err("clang killed by signal {d}", .{sig});
+            return error.LinkFailed;
+        },
         else => |term_type| {
-            std.log.err("clang terminated by signal: {s}", .{@tagName(term_type)});
+            std.log.err("clang terminated: {s}", .{@tagName(term_type)});
             return error.LinkFailed;
         },
     }

@@ -90,7 +90,8 @@ pub fn main(init: std.process.Init) !u8 {
     var diags: Diagnostics = undefined;
     diags.init(io);
 
-    var program = compile(io, gpa, options, &diags) catch {
+    var program = compile(io, gpa, options, &diags) catch |err| {
+        std.log.err("compilation failed: {s}", .{@errorName(err)});
         try out.flush();
         return 1;
     };
