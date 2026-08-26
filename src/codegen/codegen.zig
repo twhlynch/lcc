@@ -87,7 +87,10 @@ pub const CodeGen = struct {
 
         const line_count = air.lines.items.len;
 
-        var blocks = try gpa.alloc(bindings.BasicBlockRef, line_count + 1);
+        var blocks = gpa.alloc(bindings.BasicBlockRef, line_count + 1) catch |err| {
+            context.dispose();
+            return err;
+        };
         defer gpa.free(blocks);
 
         const builder = llvm.builder.Builder.create(context);
