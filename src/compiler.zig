@@ -167,7 +167,6 @@ pub fn compileAndLink(
 
     if (dynamic) {
         // dynamic: link against liblc3
-        errdefer std.Io.Dir.cwd().deleteFile(io, scratch.obj) catch {};
         try linker.link(io, gpa, environ_map, scratch.obj, "", triple, output_path, true, lib_path);
     } else {
         // static: compile and link the runtime source
