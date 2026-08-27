@@ -166,7 +166,11 @@ pub fn compileAndLink(
     try writeScratch(io, scratch.obj, object);
 
     if (dynamic) {
-        // dynamic: link against liblc3
+        // dynamic: generate liblc3 if needed, then link against it
+        errdefer std.Io.Dir.cwd().deleteFile(io, scratch.rt) catch {};
+        try writeScratch(io, scratch.rt, runtime_source);
+        try linker.generateLib(io, gpa, environ_map, scratch.rt, defaultLibName(), triple);
+        std.Io.Dir.cwd().deleteFile(io, scratch.rt) catch {};
         try linker.link(io, gpa, environ_map, scratch.obj, "", triple, output_path, true, lib_path);
     } else {
         // static: compile and link the runtime source
