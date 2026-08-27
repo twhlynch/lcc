@@ -269,3 +269,40 @@ test "usage errors are reported" {
         try std.testing.expect(std.mem.indexOf(u8, result.stderr, "file not found") != null);
     }
 }
+
+test "dynamic linking produces identical output" {
+    requireLcc(std.testing.io);
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const io = std.testing.io;
+
+    // generate liblc3 shared library
+    const gen_result = try std.process.run(alloc, io, .{
+        .argv = &.{ lcc_exe, "-generate-liblc3" },
+    });
+    try std.testing.expectEqual(@as(u8, 0), switch (gen_result.term) {
+        .exited => |code| code,
+        else => return error.Crashed,
+    });
+    defer {
+        // clean up the shared library
+        std.Io.Dir.cwd().deleteFile(io, "liblc3.dylib") catch {};
+        std.Io.Dir.cwd().deleteFile(io, "liblc3.so") catch {};
+    }
+
+    // compile hello example with dynamic linking
+    const compile_result = try std.process.run(alloc, io, .{
+        .argv = &.{ lcc_exe, "-o", ".lcc-test/hello_dynamic", "-dynamic", "examples/hello.asm" },
+    });
+    try std.testing.expectEqual(@as(u8, 0), switch (compile_result.term) {
+        .exited => |code| code,
+        else => return error.Crashed,
+    });
+    defer std.Io.Dir.cwd().deleteFile(io, ".lcc-test/hello_dynamic") catch {};
+
+    // run and compare output
+    const run_result = try execWithStdin(alloc, io, &.{".lcc-test/hello_dynamic"}, "1\n");
+    try std.testing.expectEqual(@as(u8, 0), run_result.exit);
+    try std.testing.expectEqualStrings("Hello World!\n", run_result.stdout);
+}
