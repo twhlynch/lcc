@@ -62,16 +62,20 @@ pub fn link(
         argc += 1;
 
         // embed rpath so the runtime loader finds liblc3 without LD_LIBRARY_PATH
-        var rpath_buf: [256]u8 = undefined;
-        if (lib_path.len > 0 and !std.mem.eql(u8, lib_path, ".")) {
-            const rpath = std.fmt.bufPrint(&rpath_buf, "-Wl,-rpath,{s}", .{lib_path}) catch return error.LinkFailed;
-            argv[argc] = rpath;
-            argc += 1;
-        }
-        // resolve cwd to an absolute path for the rpath
+        // resolve cwd for absolute rpaths (relative rpaths don't work on macOS dyld)
         var cwd_buf: [std.fs.max_path_bytes]u8 = undefined;
         const cwd_len = std.process.currentPath(io, &cwd_buf) catch 0;
         const cwd = if (cwd_len > 0) cwd_buf[0..cwd_len] else ".";
+        var abs_buf: [std.fs.max_path_bytes]u8 = undefined;
+
+        if (lib_path.len > 0 and !std.mem.eql(u8, lib_path, ".")) {
+            // resolve lib_path to absolute: cwd + lib_path
+            const abs = std.fmt.bufPrint(&abs_buf, "{s}/{s}", .{ cwd, lib_path }) catch return error.LinkFailed;
+            var rpath_buf: [256]u8 = undefined;
+            const rpath = std.fmt.bufPrint(&rpath_buf, "-Wl,-rpath,{s}", .{abs}) catch return error.LinkFailed;
+            argv[argc] = rpath;
+            argc += 1;
+        }
         var cwd_rpath_buf: [256]u8 = undefined;
         const cwd_rpath = std.fmt.bufPrint(&cwd_rpath_buf, "-Wl,-rpath,{s}", .{cwd}) catch return error.LinkFailed;
         argv[argc] = cwd_rpath;
@@ -136,7 +140,7 @@ pub fn generateLib(
     const clang = findClang(gpa, io, environ_map) orelse return error.ClangNotFound;
     defer gpa.free(clang);
 
-    var argv: [10][]const u8 = undefined;
+    var argv: [12][]const u8 = undefined;
     var argc: usize = 0;
     argv[argc] = clang;
     argc += 1;
@@ -149,6 +153,11 @@ pub fn generateLib(
     argc += 1;
     argv[argc] = "-fPIC";
     argc += 1;
+    if (isDarwin(triple)) {
+        argv[argc] = "-install_name";
+        argv[argc + 1] = "@rpath/liblc3.dylib";
+        argc += 2;
+    }
     argv[argc] = source_path;
     argc += 1;
     argv[argc] = "-o";
