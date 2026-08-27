@@ -84,6 +84,38 @@ pub fn main(init: std.process.Init) !u8 {
     const options = switch (parsed) {
         .help => return 0,
         .version => return 0,
+        .generate_liblc3 => |gl| {
+            const triple = compiler.resolveTriple(gpa, gl.target, gl.arch) catch |err| return err;
+            defer if (triple) |t| gpa.free(t);
+
+            compiler.generateLiblc3(
+                io,
+                gpa,
+                init.environ_map,
+                compiler.defaultLibName(),
+                triple,
+            ) catch |err| switch (err) {
+                error.ClangNotFound => {
+                    std.log.err("'clang' not found; cannot generate liblc3", .{});
+                    out.flush() catch {};
+                    return 1;
+                },
+                error.LinkFailed => {
+                    std.log.err("failed to generate liblc3", .{});
+                    out.flush() catch {};
+                    return 1;
+                },
+                else => |other| {
+                    std.log.err("compilation failed: {s}", .{@errorName(other)});
+                    out.flush() catch {};
+                    return 1;
+                },
+            };
+
+            try out.print("generated {s}\n", .{compiler.defaultLibName()});
+            out.flush() catch {};
+            return 0;
+        },
         .run => |options| options,
     };
 

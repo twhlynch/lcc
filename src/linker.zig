@@ -79,6 +79,68 @@ pub fn link(
     }
 }
 
+/// generates the liblc3 shared library from the embedded runtime source
+pub fn generateLib(
+    io: std.Io,
+    gpa: std.mem.Allocator,
+    environ_map: ?*const std.process.Environ.Map,
+    source_path: []const u8,
+    output_path: []const u8,
+    triple: ?[]const u8,
+) LinkError!void {
+    const clang = findClang(gpa, io, environ_map) orelse return error.ClangNotFound;
+    defer gpa.free(clang);
+
+    var argv: [10][]const u8 = undefined;
+    var argc: usize = 0;
+    argv[argc] = clang;
+    argc += 1;
+    if (triple) |t| {
+        argv[argc] = "-target";
+        argv[argc + 1] = t;
+        argc += 2;
+    }
+    argv[argc] = "-shared";
+    argc += 1;
+    argv[argc] = "-fPIC";
+    argc += 1;
+    argv[argc] = source_path;
+    argc += 1;
+    argv[argc] = "-o";
+    argv[argc + 1] = output_path;
+    argc += 2;
+
+    var child = std.process.spawn(io, .{
+        .argv = argv[0..argc],
+        .stdout = .inherit,
+        .stderr = .inherit,
+    }) catch |err| {
+        std.log.err("failed to spawn clang: {s}", .{@errorName(err)});
+        return error.LinkFailed;
+    };
+
+    const term = child.wait(io) catch {
+        child.kill(io);
+        _ = child.wait(io) catch {};
+        return error.LinkFailed;
+    };
+
+    switch (term) {
+        .exited => |code| if (code != 0) {
+            std.log.err("clang exited with code {d}", .{code});
+            return error.LinkFailed;
+        },
+        .signal => |sig| {
+            std.log.err("clang killed by signal {d}", .{sig});
+            return error.LinkFailed;
+        },
+        else => |term_type| {
+            std.log.err("clang terminated: {s}", .{@tagName(term_type)});
+            return error.LinkFailed;
+        },
+    }
+}
+
 /// linker flag that strips unreferenced sections
 fn gcFlag(triple: ?[]const u8) []const u8 {
     return if (isDarwin(triple)) "-Wl,-dead_strip" else "-Wl,--gc-sections";

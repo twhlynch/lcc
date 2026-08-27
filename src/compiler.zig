@@ -171,6 +171,29 @@ pub fn compileAndLink(
     std.Io.Dir.cwd().deleteFile(io, scratch.rt) catch {};
 }
 
+/// default shared library name per platform
+pub fn defaultLibName() []const u8 {
+    return if (@import("builtin").os.tag.isDarwin()) "liblc3.dylib" else "liblc3.so";
+}
+
+/// generates the liblc3 shared library from the embedded runtime source
+pub fn generateLiblc3(
+    io: std.Io,
+    gpa: std.mem.Allocator,
+    environ_map: ?*const std.process.Environ.Map,
+    output_path: []const u8,
+    triple: ?[]const u8,
+) CompileError!void {
+    const scratch = initScratchPaths(null);
+
+    errdefer std.Io.Dir.cwd().deleteFile(io, scratch.rt) catch {};
+    try writeScratch(io, scratch.rt, runtime_source);
+
+    try linker.generateLib(io, gpa, environ_map, scratch.rt, output_path, triple);
+
+    std.Io.Dir.cwd().deleteFile(io, scratch.rt) catch {};
+}
+
 pub fn optimizeLevel(level: args.Optimize) llvm.pass.Level {
     return switch (level) {
         .none => .none,

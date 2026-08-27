@@ -10,6 +10,7 @@ pub const usage =
     \\  -target <triple>  LLVM target triple for code generation
     \\  -arch <name>      Architecture component of the host triple
     \\  -emit-llvm        Print optimised LLVM IR
+    \\  -generate-liblc3  Generate liblc3 shared library
     \\  -v, --version     Print version information
     \\  -h, --help        Show this help
     \\
@@ -37,12 +38,19 @@ pub const Options = struct {
     emit_llvm: bool,
     target: ?[]const u8,
     arch: ?[]const u8,
+    generate_liblc3: bool,
 };
 
 pub const Result = union(enum) {
     help,
     version,
+    generate_liblc3: GenerateLiblc3,
     run: Options,
+};
+
+pub const GenerateLiblc3 = struct {
+    target: ?[]const u8,
+    arch: ?[]const u8,
 };
 
 const template = .{
@@ -66,6 +74,9 @@ const template = .{
     .arch = zilc.Flag{
         .long = "arch",
         .value = zilc.types.string,
+    },
+    .generate_liblc3 = zilc.Flag{
+        .long = "generate-liblc3",
     },
 };
 
@@ -103,6 +114,13 @@ pub fn parse(gpa: std.mem.Allocator, arena: std.mem.Allocator, args: []const []c
     var options: zilc.Options(template) = try .parse(gpa, arena, args, parse_config);
     defer options.deinit(arena);
 
+    if (options.flags.generate_liblc3) {
+        return .{ .generate_liblc3 = .{
+            .target = options.flags.target,
+            .arch = options.flags.arch,
+        } };
+    }
+
     const input = options.getPos(gpa, zilc.types.string, .input, 0) catch |err| switch (err) {
         error.OutOfMemory => return error.OutOfMemory,
         else => return error.Usage,
@@ -119,6 +137,7 @@ pub fn parse(gpa: std.mem.Allocator, arena: std.mem.Allocator, args: []const []c
         .emit_llvm = options.flags.emit_llvm,
         .target = options.flags.target,
         .arch = options.flags.arch,
+        .generate_liblc3 = options.flags.generate_liblc3,
     } };
 }
 
@@ -182,6 +201,12 @@ test parse {
 
     // -arch
     try expectEqualStrings("x86_64", (try testParse(&.{ "-arch", "x86_64", "f" })).run.arch.?);
+
+    // --generate-liblc3
+    {
+        const r = try testParse(&.{ "--generate-liblc3" });
+        try expectEqual(.generate_liblc3, @as(std.meta.Tag(Result), r));
+    }
 
     // combined flags
     {
