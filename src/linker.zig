@@ -27,7 +27,7 @@ pub fn link(
     const clang = findClang(gpa, io, environ_map) orelse return error.ClangNotFound;
     defer gpa.free(clang);
 
-    var argv: [16][]const u8 = undefined;
+    var argv: [20][]const u8 = undefined;
     var argc: usize = 0;
     argv[argc] = clang;
     argc += 1;
@@ -59,6 +59,22 @@ pub fn link(
         argv[argc] = local_flag;
         argc += 1;
         argv[argc] = "-llc3";
+        argc += 1;
+
+        // embed rpath so the runtime loader finds liblc3 without LD_LIBRARY_PATH
+        var rpath_buf: [256]u8 = undefined;
+        if (lib_path.len > 0 and !std.mem.eql(u8, lib_path, ".")) {
+            const rpath = std.fmt.bufPrint(&rpath_buf, "-Wl,-rpath,{s}", .{lib_path}) catch return error.LinkFailed;
+            argv[argc] = rpath;
+            argc += 1;
+        }
+        if (isDarwin(triple)) {
+            argv[argc] = "-Wl,-rpath,@loader_path";
+        } else {
+            argv[argc] = "-Wl,-rpath,$ORIGIN";
+        }
+        argc += 1;
+        argv[argc] = "-Wl,-rpath,/usr/local/lib";
         argc += 1;
     } else {
         argv[argc] = runtime_path;
