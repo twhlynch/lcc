@@ -31,6 +31,9 @@ Diagnostics are reported by ELK's parser.
 | `-emit-llvm`       | Print the optimized LLVM IR to stdout     |
 | `-target <triple>` | Cross-compile for a target triple         |
 | `-arch <name>`     | Shorthand for `-target` using the host OS |
+| `-dynamic`         | Link against liblc3 dynamically           |
+| `-L<dir>`          | Directory to search for liblc3            |
+| `-generate-liblc3` | Generate liblc3 shared library            |
 | `-v`, `--version`  | Print version information                 |
 | `-h`, `--help`     | Print usage help                          |
 
@@ -38,6 +41,20 @@ Cross-compilation reuses the host OS suffix when only an architecture is
 given (`-arch x86_64` on macOS produces a Rosetta binary). LLVM backends are
 loaded from the shared library at runtime, so no rebuild is needed for
 different targets.
+
+### Dynamic linking
+
+By default, trap implementations are statically linked into every executable.
+The `-dynamic` flag links against `liblc3` instead:
+
+```sh
+lcc -generate-liblc3                       # creates liblc3.so / liblc3.dylib
+lcc examples/hello.asm -dynamic            # links against liblc3
+lcc examples/hello.asm -dynamic -L/usr/lib # look for liblc3 in /usr/lib
+```
+
+The linker searches for liblc3 in this order: `-lib-path` (if given), `.`, then
+`/usr/local/lib`.
 
 ## Install
 
@@ -48,8 +65,10 @@ zig build install -Doptimize=ReleaseFast --prefix ~/.local
 
 ## Runtime
 
-Traps are implemented natively in `src/runtime/lc3_runtime.c`,
-which is embedded into the compiler and linked into every executable:
+Traps are implemented natively in `src/runtime/lc3_runtime.c`, which is embedded
+into the compiler and linked into every executable. By default the runtime is
+statically linked. Use `-dynamic` to link against a shared library instead (see
+[Dynamic linking](#dynamic-linking)).
 
 | Trap  | Vector | Description                                   |
 | ----- | ------ | --------------------------------------------- |
