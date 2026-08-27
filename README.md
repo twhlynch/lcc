@@ -116,6 +116,15 @@ git clone https://codeberg.org/dxrcy/elk && cd elk
 zig build install -Doptimize=ReleaseFast --prefix ~/.local
 ```
 
+### Testing on Linux
+
+A Dockerfile is included for running the test suite on Ubuntu:
+
+```sh
+docker build --platform linux/amd64 -t lcc-test .
+docker run --rm lcc-test
+```
+
 ## Semantic differences from LC-3
 
 lcc is not an emulator. Some behaviors differ from the LC-3
