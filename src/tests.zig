@@ -277,29 +277,22 @@ test "dynamic linking produces identical output" {
     const alloc = arena.allocator();
     const io = std.testing.io;
 
-    // generate liblc3 shared library
-    const gen_result = try std.process.run(alloc, io, .{
-        .argv = &.{ lcc_exe, "-generate-liblc3" },
-    });
-    try std.testing.expectEqual(@as(u8, 0), switch (gen_result.term) {
-        .exited => |code| code,
-        else => return error.Crashed,
-    });
-    defer {
-        // clean up the shared library
-        std.Io.Dir.cwd().deleteFile(io, "liblc3.dylib") catch {};
-        std.Io.Dir.cwd().deleteFile(io, "liblc3.so") catch {};
-    }
-
-    // compile hello example with dynamic linking
+    // compile hello example with dynamic linking (library is generated automatically)
     const compile_result = try std.process.run(alloc, io, .{
         .argv = &.{ lcc_exe, "-o", ".lcc-test/hello_dynamic", "-dynamic", "examples/hello.asm" },
     });
     try std.testing.expectEqual(@as(u8, 0), switch (compile_result.term) {
         .exited => |code| code,
-        else => return error.Crashed,
+        else => {
+            std.debug.print("compile failed: {s}\n", .{compile_result.stderr});
+            return error.Crashed;
+        },
     });
-    defer std.Io.Dir.cwd().deleteFile(io, ".lcc-test/hello_dynamic") catch {};
+    defer {
+        std.Io.Dir.cwd().deleteFile(io, ".lcc-test/hello_dynamic") catch {};
+        std.Io.Dir.cwd().deleteFile(io, "liblc3.dylib") catch {};
+        std.Io.Dir.cwd().deleteFile(io, "liblc3.so") catch {};
+    }
 
     // run and compare output
     const run_result = try execWithStdin(alloc, io, &.{".lcc-test/hello_dynamic"}, "1\n");
@@ -323,6 +316,7 @@ test "dynamic linking from lib-path subdirectory" {
         cwd.deleteTree(io, ".lcc-test/lib") catch {};
     }
 
+    const lib_name = if (comptime @import("builtin").os.tag.isDarwin()) "liblc3.dylib" else "liblc3.so";
     const gen_result = try std.process.run(alloc, io, .{
         .argv = &.{ lcc_exe, "-generate-liblc3" },
     });
@@ -331,7 +325,6 @@ test "dynamic linking from lib-path subdirectory" {
         else => return error.Crashed,
     });
     // move liblc3 from cwd to .lcc-test/lib/
-    const lib_name = if (comptime @import("builtin").os.tag.isDarwin()) "liblc3.dylib" else "liblc3.so";
     const mv_result = try std.process.run(alloc, io, .{
         .argv = &.{ "mv", lib_name, ".lcc-test/lib/" },
     });
@@ -340,7 +333,7 @@ test "dynamic linking from lib-path subdirectory" {
         else => return error.Crashed,
     });
 
-    // compile with -L pointing to the subdirectory
+    // compile with -L pointing to the subdirectory (auto-generates a new lib in cwd)
     const compile_result = try std.process.run(alloc, io, .{
         .argv = &.{ lcc_exe, "-o", ".lcc-test/hello_libpath", "-dynamic", "-L", ".lcc-test/lib", "examples/hello.asm" },
     });
@@ -351,7 +344,11 @@ test "dynamic linking from lib-path subdirectory" {
             return error.Crashed;
         },
     });
-    defer cwd.deleteFile(io, ".lcc-test/hello_libpath") catch {};
+    defer {
+        cwd.deleteFile(io, ".lcc-test/hello_libpath") catch {};
+        cwd.deleteFile(io, "liblc3.dylib") catch {};
+        cwd.deleteFile(io, "liblc3.so") catch {};
+    }
 
     const run_result = try execWithStdin(alloc, io, &.{".lcc-test/hello_libpath"}, "1\n");
     try std.testing.expectEqual(@as(u8, 0), run_result.exit);
