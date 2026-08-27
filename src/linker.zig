@@ -68,11 +68,13 @@ pub fn link(
             argv[argc] = rpath;
             argc += 1;
         }
-        if (isDarwin(triple)) {
-            argv[argc] = "-Wl,-rpath,@loader_path";
-        } else {
-            argv[argc] = "-Wl,-rpath,$ORIGIN";
-        }
+        // resolve cwd to an absolute path for the rpath
+        var cwd_buf: [std.fs.max_path_bytes]u8 = undefined;
+        const cwd_len = std.process.currentPath(io, &cwd_buf) catch 0;
+        const cwd = if (cwd_len > 0) cwd_buf[0..cwd_len] else ".";
+        var cwd_rpath_buf: [256]u8 = undefined;
+        const cwd_rpath = std.fmt.bufPrint(&cwd_rpath_buf, "-Wl,-rpath,{s}", .{cwd}) catch return error.LinkFailed;
+        argv[argc] = cwd_rpath;
         argc += 1;
         argv[argc] = "-Wl,-rpath,/usr/local/lib";
         argc += 1;
