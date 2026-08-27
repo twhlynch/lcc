@@ -9,7 +9,7 @@ pub const usage =
     \\  -O<N>             Optimisation level: none, 0-3
     \\  -target <triple>  LLVM target triple for code generation
     \\  -arch <name>      Architecture component of the host triple
-    \\  -emit-llvm        Print optimised LLVM IR
+    \\  -E, -emit-llvm    Print optimised LLVM IR
     \\  -dynamic          Link against liblc3 dynamically
     \\  -L<dir>           Directory to search for liblc3
     \\  -generate-liblc3  Generate liblc3 shared library
@@ -69,6 +69,7 @@ const template = .{
         .value = .{ .type = Optimize, .parser = parseOptimize },
     },
     .emit_llvm = zilc.Flag{
+        .short = 'E',
         .long = "emit-llvm",
     },
     .target = zilc.Flag{

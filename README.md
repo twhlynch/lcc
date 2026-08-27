@@ -28,7 +28,7 @@ Diagnostics are reported by ELK's parser.
 | `-o <file>`        | Output executable path                    |
 | `-Onone`           | Skip the LLVM optimization pass           |
 | `-O0` .. `-O3`     | LLVM optimization levels                  |
-| `-emit-llvm`       | Print the optimized LLVM IR to stdout     |
+| `-E`, `-emit-llvm` | Print the optimized LLVM IR to stdout     |
 | `-target <triple>` | Cross-compile for a target triple         |
 | `-arch <name>`     | Shorthand for `-target` using the host OS |
 | `-dynamic`         | Link against liblc3 dynamically           |
