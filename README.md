@@ -45,16 +45,19 @@ different targets.
 ### Dynamic linking
 
 By default, trap implementations are statically linked into every executable.
-The `-dynamic` flag links against `liblc3` instead:
+The `-dynamic` flag generates `liblc3` and links against it:
 
 ```sh
-lcc -generate-liblc3                       # creates liblc3.so / liblc3.dylib
-lcc examples/hello.asm -dynamic            # links against liblc3
+lcc examples/hello.asm -dynamic            # generates liblc3, compiles, works immediately
 lcc examples/hello.asm -dynamic -L/usr/lib # look for liblc3 in /usr/lib
 ```
 
-The linker searches for liblc3 in this order: `-lib-path` (if given), `.`, then
-`/usr/local/lib`.
+The linker searches for liblc3 in this order: `-L` (if given), `.`, then
+`/usr/local/lib`. To install liblc3 system-wide for distributing binaries:
+
+```sh
+lcc -generate-liblc3 # creates liblc3.so / liblc3.dylib
+```
 
 ## Install
 
