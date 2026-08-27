@@ -59,6 +59,9 @@ The linker searches for liblc3 in this order: `-L` (if given), `.`, then
 lcc -generate-liblc3 # creates liblc3.so / liblc3.dylib
 ```
 
+See [docs/custom_lib.md](docs/custom_lib.md) for an example of creating a
+custom trap library.
+
 ## Install
 
 ```sh
