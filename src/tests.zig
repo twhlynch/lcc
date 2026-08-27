@@ -306,3 +306,54 @@ test "dynamic linking produces identical output" {
     try std.testing.expectEqual(@as(u8, 0), run_result.exit);
     try std.testing.expectEqualStrings("Hello World!\n", run_result.stdout);
 }
+
+test "dynamic linking from lib-path subdirectory" {
+    requireLcc(std.testing.io);
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const io = std.testing.io;
+    const cwd = std.Io.Dir.cwd();
+
+    // create .lcc-test/lib/ and generate liblc3 there
+    try cwd.createDirPath(io, ".lcc-test/lib");
+    defer {
+        cwd.deleteFile(io, ".lcc-test/lib/liblc3.dylib") catch {};
+        cwd.deleteFile(io, ".lcc-test/lib/liblc3.so") catch {};
+        cwd.deleteTree(io, ".lcc-test/lib") catch {};
+    }
+
+    const gen_result = try std.process.run(alloc, io, .{
+        .argv = &.{ lcc_exe, "-generate-liblc3" },
+    });
+    try std.testing.expectEqual(@as(u8, 0), switch (gen_result.term) {
+        .exited => |code| code,
+        else => return error.Crashed,
+    });
+    // move liblc3 from cwd to .lcc-test/lib/
+    const lib_name = if (comptime @import("builtin").os.tag.isDarwin()) "liblc3.dylib" else "liblc3.so";
+    const mv_result = try std.process.run(alloc, io, .{
+        .argv = &.{ "mv", lib_name, ".lcc-test/lib/" },
+    });
+    try std.testing.expectEqual(@as(u8, 0), switch (mv_result.term) {
+        .exited => |code| code,
+        else => return error.Crashed,
+    });
+
+    // compile with -L pointing to the subdirectory
+    const compile_result = try std.process.run(alloc, io, .{
+        .argv = &.{ lcc_exe, "-o", ".lcc-test/hello_libpath", "-dynamic", "-L", ".lcc-test/lib", "examples/hello.asm" },
+    });
+    try std.testing.expectEqual(@as(u8, 0), switch (compile_result.term) {
+        .exited => |code| code,
+        else => {
+            std.debug.print("compile failed: {s}\n", .{compile_result.stderr});
+            return error.Crashed;
+        },
+    });
+    defer cwd.deleteFile(io, ".lcc-test/hello_libpath") catch {};
+
+    const run_result = try execWithStdin(alloc, io, &.{".lcc-test/hello_libpath"}, "1\n");
+    try std.testing.expectEqual(@as(u8, 0), run_result.exit);
+    try std.testing.expectEqualStrings("Hello World!\n", run_result.stdout);
+}
