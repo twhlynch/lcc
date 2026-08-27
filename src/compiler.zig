@@ -123,6 +123,8 @@ pub fn compileAndLink(
     level: llvm.pass.Level,
     emit_llvm: bool,
     triple: ?[]const u8,
+    dynamic: bool,
+    lib_path: []const u8,
 ) CompileError!void {
     var output = try codegen.CodeGen.emit(&program.air, gpa);
     defer output.deinit();
@@ -162,13 +164,20 @@ pub fn compileAndLink(
 
     errdefer std.Io.Dir.cwd().deleteFile(io, scratch.obj) catch {};
     try writeScratch(io, scratch.obj, object);
-    errdefer std.Io.Dir.cwd().deleteFile(io, scratch.rt) catch {};
-    try writeScratch(io, scratch.rt, runtime_source);
 
-    try linker.link(io, gpa, environ_map, scratch.obj, scratch.rt, triple, output_path);
+    if (dynamic) {
+        // dynamic: link against liblc3
+        errdefer std.Io.Dir.cwd().deleteFile(io, scratch.obj) catch {};
+        try linker.link(io, gpa, environ_map, scratch.obj, "", triple, output_path, true, lib_path);
+    } else {
+        // static: compile and link the runtime source
+        errdefer std.Io.Dir.cwd().deleteFile(io, scratch.rt) catch {};
+        try writeScratch(io, scratch.rt, runtime_source);
+        try linker.link(io, gpa, environ_map, scratch.obj, scratch.rt, triple, output_path, false, ".");
+    }
 
     std.Io.Dir.cwd().deleteFile(io, scratch.obj) catch {};
-    std.Io.Dir.cwd().deleteFile(io, scratch.rt) catch {};
+    if (!dynamic) std.Io.Dir.cwd().deleteFile(io, scratch.rt) catch {};
 }
 
 /// default shared library name per platform

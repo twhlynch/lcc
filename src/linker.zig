@@ -12,6 +12,7 @@ const candidate_dirs = [_][]const u8{
 
 /// links object_path and runtime_path into output_path
 /// triple is passed to clang for cross compilation when given
+/// when dynamic, links against liblc3 instead of the runtime source
 pub fn link(
     io: std.Io,
     gpa: std.mem.Allocator,
@@ -20,11 +21,13 @@ pub fn link(
     runtime_path: []const u8,
     triple: ?[]const u8,
     output_path: []const u8,
+    dynamic: bool,
+    lib_path: []const u8,
 ) LinkError!void {
     const clang = findClang(gpa, io, environ_map) orelse return error.ClangNotFound;
     defer gpa.free(clang);
 
-    var argv: [12][]const u8 = undefined;
+    var argv: [16][]const u8 = undefined;
     var argc: usize = 0;
     argv[argc] = clang;
     argc += 1;
@@ -36,12 +39,36 @@ pub fn link(
     // one section per function so the linker can drop unused trap routines
     argv[argc] = "-ffunction-sections";
     argv[argc + 1] = "-fdata-sections";
-    argv[argc + 2] = object_path;
-    argv[argc + 3] = runtime_path;
-    argv[argc + 4] = "-o";
-    argv[argc + 5] = output_path;
-    argv[argc + 6] = gcFlag(triple);
-    argc += 7;
+    argc += 2;
+    argv[argc] = object_path;
+    argc += 1;
+
+    if (dynamic) {
+        // link against liblc3 shared library
+        // search in: -lib-path, ., /usr/local/lib
+        var lib_flag_buf: [256]u8 = undefined;
+        const local_flag = std.fmt.bufPrint(&lib_flag_buf, "-L/usr/local/lib", .{}) catch return error.LinkFailed;
+        if (lib_path.len > 0 and !std.mem.eql(u8, lib_path, ".")) {
+            var user_flag_buf: [256]u8 = undefined;
+            const user_flag = std.fmt.bufPrint(&user_flag_buf, "-L{s}", .{lib_path}) catch return error.LinkFailed;
+            argv[argc] = user_flag;
+            argc += 1;
+        }
+        argv[argc] = "-L.";
+        argc += 1;
+        argv[argc] = local_flag;
+        argc += 1;
+        argv[argc] = "-llc3";
+        argc += 1;
+    } else {
+        argv[argc] = runtime_path;
+        argc += 1;
+    }
+
+    argv[argc] = "-o";
+    argv[argc + 1] = output_path;
+    argv[argc + 2] = gcFlag(triple);
+    argc += 3;
 
     if (!isDarwin(triple)) {
         argv[argc] = "-no-pie";

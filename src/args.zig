@@ -10,6 +10,8 @@ pub const usage =
     \\  -target <triple>  LLVM target triple for code generation
     \\  -arch <name>      Architecture component of the host triple
     \\  -emit-llvm        Print optimised LLVM IR
+    \\  -dynamic          Link against liblc3 dynamically
+    \\  -L<dir>           Directory to search for liblc3
     \\  -generate-liblc3  Generate liblc3 shared library
     \\  -v, --version     Print version information
     \\  -h, --help        Show this help
@@ -38,6 +40,8 @@ pub const Options = struct {
     emit_llvm: bool,
     target: ?[]const u8,
     arch: ?[]const u8,
+    dynamic: bool,
+    lib_path: ?[]const u8,
     generate_liblc3: bool,
 };
 
@@ -73,6 +77,14 @@ const template = .{
     },
     .arch = zilc.Flag{
         .long = "arch",
+        .value = zilc.types.string,
+    },
+    .dynamic = zilc.Flag{
+        .long = "dynamic",
+    },
+    .lib_path = zilc.Flag{
+        .short = 'L',
+        .long = "lib-path",
         .value = zilc.types.string,
     },
     .generate_liblc3 = zilc.Flag{
@@ -137,6 +149,8 @@ pub fn parse(gpa: std.mem.Allocator, arena: std.mem.Allocator, args: []const []c
         .emit_llvm = options.flags.emit_llvm,
         .target = options.flags.target,
         .arch = options.flags.arch,
+        .dynamic = options.flags.dynamic,
+        .lib_path = options.flags.lib_path,
         .generate_liblc3 = options.flags.generate_liblc3,
     } };
 }
@@ -175,6 +189,8 @@ test parse {
         try expectEqualStrings("file.asm", r.input);
         try expectEqual(.@"0", r.optimize);
         try expect(!r.emit_llvm);
+        try expect(!r.dynamic);
+        try expectEqual(null, r.lib_path);
     }
 
     // -o flag
@@ -202,19 +218,27 @@ test parse {
     // -arch
     try expectEqualStrings("x86_64", (try testParse(&.{ "-arch", "x86_64", "f" })).run.arch.?);
 
+    // --dynamic
+    try expect((try testParse(&.{ "--dynamic", "f" })).run.dynamic);
+
+    // --lib-path
+    try expectEqualStrings("/usr/lib", (try testParse(&.{ "--lib-path", "/usr/lib", "f" })).run.lib_path.?);
+
     // --generate-liblc3
     {
-        const r = try testParse(&.{ "--generate-liblc3" });
+        const r = try testParse(&.{"--generate-liblc3"});
         try expectEqual(.generate_liblc3, @as(std.meta.Tag(Result), r));
     }
 
     // combined flags
     {
-        const r = (try testParse(&.{ "-o", "out", "-O2", "-emit-llvm", "-arch", "arm64", "f" })).run;
+        const r = (try testParse(&.{ "-o", "out", "-O2", "-emit-llvm", "-arch", "arm64", "--dynamic", "--lib-path", "/tmp", "f" })).run;
         try expectEqualStrings("out", r.output.?);
         try expectEqual(.@"2", r.optimize);
         try expect(r.emit_llvm);
         try expectEqualStrings("arm64", r.arch.?);
+        try expect(r.dynamic);
+        try expectEqualStrings("/tmp", r.lib_path.?);
     }
 
     // end-of-options marker
