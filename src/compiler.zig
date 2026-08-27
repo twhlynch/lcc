@@ -124,7 +124,7 @@ pub fn compileAndLink(
     emit_llvm: bool,
     triple: ?[]const u8,
     dynamic: bool,
-    lib_path: []const u8,
+    lib_path: ?[]const u8,
 ) CompileError!void {
     var output = try codegen.CodeGen.emit(&program.air, gpa);
     defer output.deinit();
@@ -171,7 +171,7 @@ pub fn compileAndLink(
         try writeScratch(io, scratch.rt, runtime_source);
         try linker.generateLib(io, gpa, environ_map, scratch.rt, defaultLibName(), triple);
         std.Io.Dir.cwd().deleteFile(io, scratch.rt) catch {};
-        try linker.link(io, gpa, environ_map, scratch.obj, "", triple, output_path, true, lib_path);
+        try linker.link(io, gpa, environ_map, scratch.obj, "", triple, output_path, true, lib_path orelse ".");
     } else {
         // static: compile and link the runtime source
         errdefer std.Io.Dir.cwd().deleteFile(io, scratch.rt) catch {};

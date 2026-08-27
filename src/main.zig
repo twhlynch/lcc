@@ -147,7 +147,7 @@ pub fn main(init: std.process.Init) !u8 {
         options.emit_llvm,
         triple,
         options.dynamic,
-        options.lib_path orelse ".",
+        options.lib_path,
     ) catch |err| switch (err) {
         error.InvalidModule => {
             std.log.err("generated LLVM IR failed verification", .{});
