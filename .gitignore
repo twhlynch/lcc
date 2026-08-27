@@ -2,8 +2,12 @@
 !/*/
 !/*.*
 
-.zig-cache/
-zig-out/
-zig-pkg/
+/.zig-cache/
+/zig-out/
+/zig-pkg/
+
 .DS_Store
-.lcc-test/
+
+/.lcc-test/
+
+/liblc3.*
