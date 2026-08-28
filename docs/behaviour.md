@@ -7,12 +7,12 @@ from traditional LC3.
 ## Raw words are always NOPs
 
 LC3 memory contains raw 16-bit values and the CPU decodes whatever the PC points
-to as an instruction. This means a `.FILL x1234` would decode as a valid `ADD
-R1, R0, #-12`.
+to as an instruction. This means a `.FILL x1234` would decode as a valid `add
+r1, r0, #-12`.
 
 In lcc `.FILL`/`.BLKW`/`.STRINGZ` directives placed between instructions are
 treated as **NOPs** in every case. Execution will fall through to the next word,
-and the stored value is still accessible via `LD`/`ST`/`LEA`/`LDR`/`STR`.
+and the stored value is still accessible via `ld`/`st`/`lea`/`ldr`/`str`.
 
 This means for the following code:
 
@@ -29,7 +29,7 @@ the entire program. In lcc, it skips over it silently.
 
 ## Self modifying code
 
-Writing to instruction memory (`STR`/`STI` to an address containing code) can
+Writing to instruction memory (`str`/`sti` to an address containing code) can
 create self modifying code in LC3. But in lcc, the compiled program contains
 native assembly instructions, not 16-bit LC3 words. Overwriting a "word" in
 memory does not modify the corresponding native instruction.
@@ -54,7 +54,7 @@ LC3 should override the `reg` instruction with `halt` but in lcc it will stay
 
 ## No supervisor
 
-LC3 supports interrupts via `RTI`, and privelaged memory (< `x3000`) containing
+LC3 supports interrupts via `rti`, and privelaged memory (< `x3000`) containing
 e.g., the supervisor stack. lcc does not implement interrupt handling, and
 compiles everything as a single user-mode program so accessing privelaged memory
 will work.

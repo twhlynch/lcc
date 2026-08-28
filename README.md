@@ -92,18 +92,18 @@ into the compiler and linked into every executable. By default the runtime is
 statically linked. Use `-dynamic` to link against a shared library instead (see
 [Dynamic linking](#dynamic-linking)).
 
-| Trap  | Vector | Description                                   |
-| ----- | ------ | --------------------------------------------- |
-| GETC  | x20    | Read one character into R0                    |
-| OUT   | x21    | Print the low byte of R0                      |
-| PUTS  | x22    | Print the NUL-terminated string at mem[R0]    |
-| IN    | x23    | Prompt `Input> `, read and echo one character |
-| PUTSP | x24    | Like PUTS but two characters per word         |
-| HALT  | x25    | Flush output and exit with status 0           |
-| PUTN  | x26    | Print R0 as an unsigned decimal with newline  |
-| REG   | x27    | Dump registers, PC, and condition codes       |
+| Trap    | Vector | Description                                   |
+| ------- | ------ | --------------------------------------------- |
+| `getc`  | `x20`  | Read one character into R0                    |
+| `out`   | `x21`  | Print the low byte of R0                      |
+| `puts`  | `x22`  | Print the NUL-terminated string at mem[R0]    |
+| `in`    | `x23`  | Prompt `Input> `, read and echo one character |
+| `putsp` | `x24`  | Like `puts` but two characters per word       |
+| `halt`  | `x25`  | Flush output and exit with status 0           |
+| `putn`  | `x26`  | Print R0 as an unsigned decimal with newline  |
+| `reg`   | `x27`  | Dump registers, PC, and condition codes       |
 
-Trap semantics follow ELK's emulator. `PUTN` and `REG` are debug extensions.
+Trap semantics follow ELK's emulator. `putn` and `reg` are debug extensions.
 
 ## Building
 
