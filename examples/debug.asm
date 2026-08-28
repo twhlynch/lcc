@@ -15,7 +15,6 @@ Loop
     add r3, r1, r3      ; r3 = counter - limit
     brnz Loop
 
-    reg
     halt
 
 .END
