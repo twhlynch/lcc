@@ -6,7 +6,7 @@ override traps by providing your own implementation in a custom library.
 
 ## Example
 
-Suppose you want `PUTN` to print numbers in hex instead of decimal.
+Suppose you want `putn` to print numbers in hex instead of decimal.
 
 Start by copying the default runtime and modifying it:
 

@@ -118,7 +118,11 @@ pub const CodeGen = struct {
         const main_fn = bindings.LLVMAddFunction(
             output.module.ref,
             "main",
-            llvm.types.function(llvm.types.int32(context), &.{}),
+            llvm.types.function(llvm.types.int32(context), &.{
+                llvm.types.int32(context),
+                llvm.types.pointer(context),
+                llvm.types.pointer(context),
+            }),
         );
 
         // declare the native runtime functions
@@ -130,9 +134,23 @@ pub const CodeGen = struct {
             );
         }
 
-        // entry block: slots, memory image, jump to word 0
+        // declare lcc_set_args(argc, argv)
+        const set_args_fn = bindings.LLVMAddFunction(
+            output.module.ref,
+            "lcc_set_args",
+            llvm.types.function(llvm.types.void_(context), &.{
+                llvm.types.int32(context),
+                llvm.types.pointer(context),
+            }),
+        );
+
+        // entry block: call lcc_set_args, then set up slots and memory
         const entry = bindings.LLVMAppendBasicBlockInContext(context.ref, main_fn, "entry");
         cg.builder.positionAtEnd(entry);
+
+        const argc = bindings.LLVMGetParam(main_fn, 0);
+        const argv = bindings.LLVMGetParam(main_fn, 1);
+        _ = cg.builder.buildCall(set_args_fn, &.{ argc, argv }, "");
 
         inline for (0..8) |code| {
             var name_buffer: [8]u8 = undefined;

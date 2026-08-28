@@ -7,6 +7,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 #if defined(__unix__) || defined(__APPLE__)
 #define LCC_POSIX 1
@@ -25,6 +26,20 @@
 static int at_newline = 1;
 
 static void finish_newline(void);
+
+/* lcc_set_args stores argc/argv, read_byte walks them */
+static int arg_argc = 0;
+static char **arg_argv = NULL;
+static int arg_i = 1;
+static int arg_pos = 0;
+
+void lcc_set_args(int argc, char *argv[])
+{
+	arg_argc = argc;
+	arg_argv = argv;
+	arg_i = 1;
+	arg_pos = 0;
+}
 
 #if defined(LCC_POSIX)
 /* original terminal settings, restored on exit */
@@ -73,6 +88,27 @@ static void restore_terminal(void)
 static int read_byte(void)
 {
 	(void)fflush(stdout);
+
+	/* walk argv[1..] inserting spaces between args */
+	if (arg_i < arg_argc)
+	{
+		char *arg = arg_argv[arg_i];
+		int c = (unsigned char)arg[arg_pos];
+		/* return the current char if valid */
+		if (c != '\0')
+		{
+			arg_pos++;
+			return c;
+		}
+		/* advance to next arg, emit separating space */
+		arg_i++;
+		arg_pos = 0;
+		if (arg_i < arg_argc)
+		{
+			return ' ';
+		}
+	}
+
 	return getchar();
 }
 

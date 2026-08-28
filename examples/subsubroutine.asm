@@ -5,14 +5,25 @@
     halt
 
 Sub1
+    add r0, r7, #0
+    putn
+
     st r7, SaveR7
     jsr Sub2
+
+    add r0, r7, #0
+    putn
+
     ld r7, SaveR7
+
+    add r0, r7, #0
+    putn
 
     ret
 
 Sub2
-    reg
+    add r0, r7, #0
+    putn
 
     ret
 
