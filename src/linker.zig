@@ -12,6 +12,7 @@ const candidate_dirs = [_][]const u8{
 
 /// links object_path and runtime_path into output_path
 /// triple is passed to clang for cross compilation when given
+/// when dynamic, links against liblc3 instead of the runtime source
 pub fn link(
     io: std.Io,
     gpa: std.mem.Allocator,
@@ -20,36 +21,170 @@ pub fn link(
     runtime_path: []const u8,
     triple: ?[]const u8,
     output_path: []const u8,
+    dynamic: bool,
+    lib_path: ?[]const u8,
 ) LinkError!void {
-    const clang = findClang(gpa, io, environ_map) orelse return error.ClangNotFound;
+    const clang = findClang(gpa, io, environ_map) orelse {
+        return error.ClangNotFound;
+    };
     defer gpa.free(clang);
 
-    var argv: [12][]const u8 = undefined;
-    var argc: usize = 0;
-    argv[argc] = clang;
-    argc += 1;
-    if (triple) |t| {
-        argv[argc] = "-target";
-        argv[argc + 1] = t;
-        argc += 2;
+    var args = std.ArrayList([]const u8).empty;
+    defer {
+        for (args.items) |item| {
+            if (std.mem.startsWith(u8, item, "-Wl,-rpath,")) {
+                gpa.free(item);
+            }
+        }
+        args.deinit(gpa);
     }
-    // one section per function so the linker can drop unused trap routines
-    argv[argc] = "-ffunction-sections";
-    argv[argc + 1] = "-fdata-sections";
-    argv[argc + 2] = object_path;
-    argv[argc + 3] = runtime_path;
-    argv[argc + 4] = "-o";
-    argv[argc + 5] = output_path;
-    argv[argc + 6] = gcFlag(triple);
-    argc += 7;
+
+    addTarget(&args, gpa, triple) catch {
+        return error.LinkFailed;
+    };
+
+    args.appendSlice(gpa, &.{
+        "-ffunction-sections", "-fdata-sections", object_path,
+    }) catch {
+        return error.LinkFailed;
+    };
+
+    if (dynamic) {
+        addDynamicRuntime(&args, gpa, io, lib_path) catch {
+            return error.LinkFailed;
+        };
+    } else {
+        args.append(gpa, runtime_path) catch {
+            return error.LinkFailed;
+        };
+    }
+
+    args.appendSlice(gpa, &.{
+        "-o",
+        output_path,
+        gcFlag(triple),
+    }) catch {
+        return error.LinkFailed;
+    };
 
     if (!isDarwin(triple)) {
-        argv[argc] = "-no-pie";
-        argc += 1;
+        args.append(gpa, "-no-pie") catch {
+            return error.LinkFailed;
+        };
     }
 
+    try runClang(io, gpa, clang, args.items);
+}
+
+/// generates the liblc3 shared library from the embedded runtime source
+pub fn generateLib(
+    io: std.Io,
+    gpa: std.mem.Allocator,
+    environ_map: ?*const std.process.Environ.Map,
+    source_path: []const u8,
+    output_path: []const u8,
+    triple: ?[]const u8,
+) LinkError!void {
+    const clang = findClang(gpa, io, environ_map) orelse {
+        return error.ClangNotFound;
+    };
+    defer gpa.free(clang);
+
+    var args = std.ArrayList([]const u8).empty;
+    defer args.deinit(gpa);
+
+    addTarget(&args, gpa, triple) catch {
+        return error.LinkFailed;
+    };
+
+    args.appendSlice(gpa, &.{
+        "-shared", "-fPIC",
+    }) catch {
+        return error.LinkFailed;
+    };
+
+    if (isDarwin(triple)) {
+        args.appendSlice(gpa, &.{
+            "-install_name", "@rpath/liblc3.dylib",
+        }) catch {
+            return error.LinkFailed;
+        };
+    }
+
+    args.appendSlice(gpa, &.{
+        source_path, "-o", output_path,
+    }) catch {
+        return error.LinkFailed;
+    };
+
+    try runClang(io, gpa, clang, args.items);
+}
+
+fn addTarget(
+    args: *std.ArrayList([]const u8),
+    gpa: std.mem.Allocator,
+    triple: ?[]const u8,
+) !void {
+    if (triple) |t| {
+        try args.appendSlice(gpa, &.{ "-target", t });
+    }
+}
+
+fn addDynamicRuntime(
+    args: *std.ArrayList([]const u8),
+    gpa: std.mem.Allocator,
+    io: std.Io,
+    lib_path: ?[]const u8,
+) !void {
+    if (lib_path) |path| {
+        try args.appendSlice(gpa, &.{ "-L", path });
+    }
+
+    try args.appendSlice(gpa, &.{
+        "-L", ".", "-L", "/usr/local/lib", "-llc3",
+    });
+
+    // embed rpaths so dyld/ld.so can find liblc3 without LD_LIBRARY_PATH
+    // use absolute paths: relative rpaths are not resolved by dyld on macOS
+    var cwd_buf: [std.fs.max_path_bytes]u8 = undefined;
+    const cwd_len = std.process.currentPath(io, &cwd_buf) catch 0;
+    const cwd = if (cwd_len > 0) cwd_buf[0..cwd_len] else ".";
+
+    // rpath order mirrors link search order: lib_path, cwd, /usr/local/lib
+    if (lib_path) |path| {
+        const abs = try std.fs.path.join(gpa, &.{ cwd, path });
+        defer gpa.free(abs);
+        const rpath = try std.fmt.allocPrint(gpa, "-Wl,-rpath,{s}", .{abs});
+        try args.append(gpa, rpath);
+    }
+    {
+        const rpath = try std.fmt.allocPrint(gpa, "-Wl,-rpath,{s}", .{cwd});
+        try args.append(gpa, rpath);
+    }
+    {
+        const rpath = try gpa.dupe(u8, "-Wl,-rpath,/usr/local/lib");
+        try args.append(gpa, rpath);
+    }
+}
+
+fn runClang(
+    io: std.Io,
+    gpa: std.mem.Allocator,
+    clang: []const u8,
+    args: []const []const u8,
+) LinkError!void {
+    var argv = std.ArrayList([]const u8).empty;
+    defer argv.deinit(gpa);
+
+    argv.append(gpa, clang) catch {
+        return error.LinkFailed;
+    };
+    argv.appendSlice(gpa, args) catch {
+        return error.LinkFailed;
+    };
+
     var child = std.process.spawn(io, .{
-        .argv = argv[0..argc],
+        .argv = argv.items,
         .stdout = .inherit,
         .stderr = .inherit,
     }) catch |err| {
@@ -85,10 +220,10 @@ fn gcFlag(triple: ?[]const u8) []const u8 {
 }
 
 fn isDarwin(triple: ?[]const u8) bool {
-    if (triple) |t|
+    if (triple) |t| {
         return std.mem.indexOf(u8, t, "darwin") != null or
-            std.mem.indexOf(u8, t, "macos") != null or
-            std.mem.indexOf(u8, t, "ios") != null;
+            std.mem.indexOf(u8, t, "macos") != null;
+    }
     return @import("builtin").os.tag.isDarwin();
 }
 
@@ -101,22 +236,26 @@ fn findClang(
         if (map.get("PATH")) |path| {
             var dirs = std.mem.splitScalar(u8, path, ':');
             while (dirs.next()) |dir| {
-                if (findIn(gpa, io, dir)) |found|
+                if (findIn(gpa, io, dir)) |found| {
                     return found;
+                }
             }
         }
     }
 
     for (candidate_dirs) |dir| {
-        if (findIn(gpa, io, dir)) |found|
+        if (findIn(gpa, io, dir)) |found| {
             return found;
+        }
     }
 
     return null;
 }
 
 fn findIn(gpa: std.mem.Allocator, io: std.Io, dir: []const u8) ?[]u8 {
-    const path = std.fmt.allocPrint(gpa, "{s}/clang", .{dir}) catch return null;
+    const path = std.fmt.allocPrint(gpa, "{s}/clang", .{dir}) catch {
+        return null;
+    };
 
     std.Io.Dir.cwd().access(io, path, .{ .execute = true }) catch {
         gpa.free(path);

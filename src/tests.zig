@@ -109,8 +109,12 @@ fn execWithStdin(
     const stdout_data = try drain(alloc, io, &child, .stdout);
     const stderr_data = try drain(alloc, io, &child, .stderr);
 
-    switch (child.wait(io) catch return error.ProgramCrashed) {
-        .exited => |code| return .{ .exit = code, .stdout = stdout_data, .stderr = stderr_data },
+    switch (child.wait(io) catch {
+        return error.ProgramCrashed;
+    }) {
+        .exited => |code| {
+            return .{ .exit = code, .stdout = stdout_data, .stderr = stderr_data };
+        },
         else => {
             alloc.free(stdout_data);
             alloc.free(stderr_data);
@@ -127,8 +131,12 @@ fn drain(
     comptime which: enum { stdout, stderr },
 ) ![]u8 {
     const file = switch (which) {
-        .stdout => child.stdout orelse return alloc.dupe(u8, ""),
-        .stderr => child.stderr orelse return alloc.dupe(u8, ""),
+        .stdout => child.stdout orelse {
+            return alloc.dupe(u8, "");
+        },
+        .stderr => child.stderr orelse {
+            return alloc.dupe(u8, "");
+        },
     };
 
     var buffer: [4096]u8 = undefined;
@@ -162,7 +170,9 @@ test "compile and run every example" {
     const cwd = std.Io.Dir.cwd();
     try cwd.createDirPath(std.testing.io, ".lcc-test");
 
-    for (examples) |expect| try checkExample(std.testing.allocator, expect, "-O0");
+    for (examples) |expect| {
+        try checkExample(std.testing.allocator, expect, "-O0");
+    }
 }
 
 test "optimised builds preserve behaviour" {
@@ -170,7 +180,9 @@ test "optimised builds preserve behaviour" {
     const cwd = std.Io.Dir.cwd();
     try cwd.createDirPath(std.testing.io, ".lcc-test");
 
-    for (examples) |expect| try checkExample(std.testing.allocator, expect, "-O2");
+    for (examples) |expect| {
+        try checkExample(std.testing.allocator, expect, "-O2");
+    }
 }
 
 test "output matches the elk emulator" {
@@ -180,7 +192,9 @@ test "output matches the elk emulator" {
     const io = std.testing.io;
 
     for (examples) |expect| {
-        if (!expect.match_emulator) continue;
+        if (!expect.match_emulator) {
+            continue;
+        }
         var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
         defer arena.deinit();
         const alloc = arena.allocator();
@@ -268,4 +282,89 @@ test "usage errors are reported" {
         });
         try std.testing.expect(std.mem.indexOf(u8, result.stderr, "file not found") != null);
     }
+}
+
+test "dynamic linking produces identical output" {
+    requireLcc(std.testing.io);
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const io = std.testing.io;
+
+    // compile hello example with dynamic linking (library is generated automatically)
+    const compile_result = try std.process.run(alloc, io, .{
+        .argv = &.{ lcc_exe, "-o", ".lcc-test/hello_dynamic", "-dynamic", "examples/hello.asm" },
+    });
+    try std.testing.expectEqual(@as(u8, 0), switch (compile_result.term) {
+        .exited => |code| code,
+        else => {
+            std.debug.print("compile failed: {s}\n", .{compile_result.stderr});
+            return error.Crashed;
+        },
+    });
+    defer {
+        std.Io.Dir.cwd().deleteFile(io, ".lcc-test/hello_dynamic") catch {};
+        std.Io.Dir.cwd().deleteFile(io, "liblc3.dylib") catch {};
+        std.Io.Dir.cwd().deleteFile(io, "liblc3.so") catch {};
+    }
+
+    // run and compare output
+    const run_result = try execWithStdin(alloc, io, &.{".lcc-test/hello_dynamic"}, "1\n");
+    try std.testing.expectEqual(@as(u8, 0), run_result.exit);
+    try std.testing.expectEqualStrings("Hello World!\n", run_result.stdout);
+}
+
+test "dynamic linking from lib-path subdirectory" {
+    requireLcc(std.testing.io);
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const io = std.testing.io;
+    const cwd = std.Io.Dir.cwd();
+
+    // create .lcc-test/lib/ and generate liblc3 there
+    try cwd.createDirPath(io, ".lcc-test/lib");
+    defer {
+        cwd.deleteFile(io, ".lcc-test/lib/liblc3.dylib") catch {};
+        cwd.deleteFile(io, ".lcc-test/lib/liblc3.so") catch {};
+        cwd.deleteTree(io, ".lcc-test/lib") catch {};
+    }
+
+    const lib_name = if (comptime @import("builtin").os.tag.isDarwin()) "liblc3.dylib" else "liblc3.so";
+    const gen_result = try std.process.run(alloc, io, .{
+        .argv = &.{ lcc_exe, "-generate-liblc3" },
+    });
+    try std.testing.expectEqual(@as(u8, 0), switch (gen_result.term) {
+        .exited => |code| code,
+        else => return error.Crashed,
+    });
+    // move liblc3 from cwd to .lcc-test/lib/
+    const mv_result = try std.process.run(alloc, io, .{
+        .argv = &.{ "mv", lib_name, ".lcc-test/lib/" },
+    });
+    try std.testing.expectEqual(@as(u8, 0), switch (mv_result.term) {
+        .exited => |code| code,
+        else => return error.Crashed,
+    });
+
+    // compile with -L pointing to the subdirectory (auto-generates a new lib in cwd)
+    const compile_result = try std.process.run(alloc, io, .{
+        .argv = &.{ lcc_exe, "-o", ".lcc-test/hello_libpath", "-dynamic", "-L", ".lcc-test/lib", "examples/hello.asm" },
+    });
+    try std.testing.expectEqual(@as(u8, 0), switch (compile_result.term) {
+        .exited => |code| code,
+        else => {
+            std.debug.print("compile failed: {s}\n", .{compile_result.stderr});
+            return error.Crashed;
+        },
+    });
+    defer {
+        cwd.deleteFile(io, ".lcc-test/hello_libpath") catch {};
+        cwd.deleteFile(io, "liblc3.dylib") catch {};
+        cwd.deleteFile(io, "liblc3.so") catch {};
+    }
+
+    const run_result = try execWithStdin(alloc, io, &.{".lcc-test/hello_libpath"}, "1\n");
+    try std.testing.expectEqual(@as(u8, 0), run_result.exit);
+    try std.testing.expectEqualStrings("Hello World!\n", run_result.stdout);
 }

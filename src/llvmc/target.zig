@@ -101,10 +101,7 @@ pub const TargetMachine = struct {
 /// initialises the llvm backend matching the triple's architecture
 /// backends are resolved through dlsym so lcc does not link every target
 fn initializeTargetFor(triple: []const u8) void {
-    const prefix = if (std.mem.indexOfScalar(u8, triple, '-')) |dash|
-        triple[0..dash]
-    else
-        triple;
+    const prefix = if (std.mem.indexOfScalar(u8, triple, '-')) |dash| triple[0..dash] else triple;
 
     const names = [_]struct { match: []const u8, backend: []const u8 }{
         .{ .match = "x86_64", .backend = "X86" },
@@ -120,15 +117,21 @@ fn initializeTargetFor(triple: []const u8) void {
 
     var backend: ?[]const u8 = null;
     for (names) |name| {
-        if (std.mem.eql(u8, prefix, name.match)) backend = name.backend;
+        if (std.mem.eql(u8, prefix, name.match)) {
+            backend = name.backend;
+        }
     }
     // unknown architectures fall back to whatever llvm resolves itself
-    const backend_name = backend orelse return;
+    const backend_name = backend orelse {
+        return;
+    };
 
     const suffixes = [_][]const u8{ "TargetInfo", "Target", "TargetMC", "AsmPrinter", "AsmParser" };
 
     // handle for the current process image, which includes libLLVM
-    const handle = std.c.dlopen(null, .{ .LAZY = true }) orelse return;
+    const handle = std.c.dlopen(null, .{ .LAZY = true }) orelse {
+        return;
+    };
     defer _ = std.c.dlclose(handle);
 
     for (suffixes) |suffix| {
@@ -139,8 +142,9 @@ fn initializeTargetFor(triple: []const u8) void {
             .{ backend_name, suffix },
         ) catch unreachable;
 
-        const init_fn: ?*const fn () callconv(.c) void =
-            @ptrCast(@alignCast(std.c.dlsym(handle, symbol.ptr)));
-        if (init_fn) |f| f();
+        const init_fn: ?*const fn () callconv(.c) void = @ptrCast(@alignCast(std.c.dlsym(handle, symbol.ptr)));
+        if (init_fn) |f| {
+            f();
+        }
     }
 }

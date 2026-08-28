@@ -33,16 +33,19 @@ pub fn assemble(
     var air: Air = .init();
     errdefer air.deinit(gpa);
 
-    var parser = elk.Parser.new(traps, source, reporter) catch
+    var parser = elk.Parser.new(traps, source, reporter) catch {
         return error.AssemblyFailed;
+    };
 
     try parser.parseAir(gpa, &air);
-    if (reporter.getLevel() == .err)
+    if (reporter.getLevel() == .err) {
         return error.AssemblyFailed;
+    }
 
     parser.resolveLabelReferences(&air);
-    if (reporter.getLevel() == .err)
+    if (reporter.getLevel() == .err) {
         return error.AssemblyFailed;
+    }
 
     return air;
 }

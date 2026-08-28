@@ -1,0 +1,7 @@
+.git
+.zig-cache
+zig-out
+zig-pkg
+.lcc-test
+liblc3.*
+.DS_Store

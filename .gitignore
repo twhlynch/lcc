@@ -2,8 +2,14 @@
 !/*/
 !/*.*
 
-.zig-cache/
-zig-out/
-zig-pkg/
+!Dockerfile
+
+/.zig-cache/
+/zig-out/
+/zig-pkg/
+
 .DS_Store
-.lcc-test/
+
+/.lcc-test/
+
+/liblc3.*
