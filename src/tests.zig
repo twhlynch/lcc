@@ -10,10 +10,12 @@ const Example = struct {
     exit_code: u8,
     stdout: []const u8 = "",
     match_emulator: bool = true,
+    args: []const []const u8 = &.{},
 };
 
 const examples = [_]Example{
     .{ .name = "arithmetic", .exit_code = 12 },
+    .{ .name = "box", .exit_code = 0, .stdout = "\xe2\x94\x8c\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x90\n\xe2\x94\x82    \xe2\x94\x82\n\xe2\x94\x82    \xe2\x94\x82\n\xe2\x94\x82    \xe2\x94\x82\n\xe2\x94\x82    \xe2\x94\x82\n\xe2\x94\x82    \xe2\x94\x82\n\xe2\x94\x94\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x98\n", .args = &.{ "4", "5" } },
     .{ .name = "inline_storage", .exit_code = 0, .stdout = "+----------------------------------+\n|       hex      int    uint   chr |\n| R0  x3000   +12288   12288   --- |\n| R1  x3001   +12289   12289   --- |\n| R2  x0000       +0       0   NUL |\n| R3  x0000       +0       0   NUL |\n| R4  x0000       +0       0   NUL |\n| R5  x0000       +0       0   NUL |\n| R6  x0000       +0       0   NUL |\n| R7  x0000       +0       0   NUL |\n+----------------+-----------------+\n|    PC x3008    |   CC POSITIVE   |\n+----------------+-----------------+\n", .match_emulator = false },
     .{ .name = "debug", .exit_code = 0, .stdout = "1\n3\n6\n10\n15\n21\n28\n36\n45\n55\n66\n+----------------------------------+\n|       hex      int    uint   chr |\n| R0  x0042      +66      66    B  |\n| R1  x000B      +11      11    VT |\n| R2  x000A      +10      10    LF |\n| R3  x0001       +1       1   SOH |\n| R4  x0000       +0       0   NUL |\n| R5  x0000       +0       0   NUL |\n| R6  x0000       +0       0   NUL |\n| R7  x0000       +0       0   NUL |\n+----------------+-----------------+\n|    PC x300D    |   CC POSITIVE   |\n+----------------+-----------------+\n" },
     .{ .name = "echo", .exit_code = 0, .stdout = "1\n" },
@@ -44,6 +46,7 @@ fn runProgram(
     io: std.Io,
     example: []const u8,
     opt_level: []const u8,
+    args: []const []const u8,
 ) !RunResult {
     var out_path_buf: [128]u8 = undefined;
     const out_path = try std.fmt.bufPrint(&out_path_buf, ".lcc-test/{s}", .{example});
@@ -79,7 +82,7 @@ fn runProgram(
         },
     }
 
-    return execWithStdin(alloc, io, &.{out_path}, "1\n");
+    return execWithStdin(alloc, io, &.{out_path}, "1\n", args);
 }
 
 /// spawns argv with input piped to stdin and collects its stdout and stderr
@@ -88,9 +91,17 @@ fn execWithStdin(
     io: std.Io,
     argv: []const []const u8,
     input: []const u8,
+    args: []const []const u8,
 ) !RunResult {
+    var full_argv: [8][]const u8 = undefined;
+    full_argv[0] = argv[0];
+    for (argv[1..], 0..) |a, i| full_argv[1 + i] = a;
+    const base_len = argv.len;
+    for (args, 0..) |a, i| full_argv[base_len + i] = a;
+    const total = base_len + args.len;
+
     var child = try std.process.spawn(io, .{
-        .argv = argv,
+        .argv = full_argv[0..total],
         .stdin = .pipe,
         .stdout = .pipe,
         // captured so emulator noise does not pollute the test output
@@ -158,7 +169,7 @@ fn checkExample(alloc: std.mem.Allocator, expect: Example, opt_level: []const u8
     var arena = std.heap.ArenaAllocator.init(alloc);
     defer arena.deinit();
 
-    const result = try runProgram(arena.allocator(), std.testing.io, expect.name, opt_level);
+    const result = try runProgram(arena.allocator(), std.testing.io, expect.name, opt_level, expect.args);
     errdefer std.debug.print("{s} (opt {s})\n", .{ expect.name, opt_level });
 
     try std.testing.expectEqual(expect.exit_code, result.exit);
@@ -202,9 +213,27 @@ test "output matches the elk emulator" {
         var asm_path_buf: [128]u8 = undefined;
         const asm_path = try std.fmt.bufPrint(&asm_path_buf, "examples/{s}.asm", .{expect.name});
 
+        // build stdin: for programs that take args, join them with spaces
+        // so getc reads them from stdin; otherwise default to "1\n"
+        var stdin_buf: [64]u8 = undefined;
+        const stdin = if (expect.args.len > 0) blk: {
+            var pos: usize = 0;
+            for (expect.args, 0..) |arg, i| {
+                if (i > 0) {
+                    stdin_buf[pos] = ' ';
+                    pos += 1;
+                }
+                @memcpy(stdin_buf[pos .. pos + arg.len], arg);
+                pos += arg.len;
+            }
+            stdin_buf[pos] = '\n';
+            pos += 1;
+            break :blk stdin_buf[0..pos];
+        } else "1\n";
+
         // the emulator always exits 0 regardless of R0, so only output is
         // compared here; exit codes are covered by checkExample
-        const emulated = execWithStdin(alloc, io, &.{ "elk", asm_path }, "1\n") catch |err| switch (err) {
+        const emulated = execWithStdin(alloc, io, &.{ "elk", asm_path }, stdin, &.{}) catch |err| switch (err) {
             error.FileNotFound => {
                 std.debug.print("elk not installed; skipping emulator comparison\n", .{});
                 return;
@@ -215,7 +244,7 @@ test "output matches the elk emulator" {
         var out_path_buf: [128]u8 = undefined;
         const out_path = try std.fmt.bufPrint(&out_path_buf, ".lcc-test/{s}", .{expect.name});
         errdefer std.debug.print("{s}: compiled output differs from the emulator\n", .{expect.name});
-        const compiled = try execWithStdin(alloc, io, &.{out_path}, "1\n");
+        const compiled = try execWithStdin(alloc, io, &.{out_path}, stdin, &.{});
 
         try std.testing.expectEqualStrings(emulated.stdout, compiled.stdout);
     }
@@ -309,7 +338,7 @@ test "dynamic linking produces identical output" {
     }
 
     // run and compare output
-    const run_result = try execWithStdin(alloc, io, &.{".lcc-test/hello_dynamic"}, "1\n");
+    const run_result = try execWithStdin(alloc, io, &.{".lcc-test/hello_dynamic"}, "1\n", &.{});
     try std.testing.expectEqual(@as(u8, 0), run_result.exit);
     try std.testing.expectEqualStrings("Hello World!\n", run_result.stdout);
 }
@@ -364,7 +393,7 @@ test "dynamic linking from lib-path subdirectory" {
         cwd.deleteFile(io, "liblc3.so") catch {};
     }
 
-    const run_result = try execWithStdin(alloc, io, &.{".lcc-test/hello_libpath"}, "1\n");
+    const run_result = try execWithStdin(alloc, io, &.{".lcc-test/hello_libpath"}, "1\n", &.{});
     try std.testing.expectEqual(@as(u8, 0), run_result.exit);
     try std.testing.expectEqualStrings("Hello World!\n", run_result.stdout);
 }
