@@ -27,103 +27,37 @@ pub fn link(
     const clang = findClang(gpa, io, environ_map) orelse return error.ClangNotFound;
     defer gpa.free(clang);
 
-    var argv: [20][]const u8 = undefined;
-    var argc: usize = 0;
-    argv[argc] = clang;
-    argc += 1;
-    if (triple) |t| {
-        argv[argc] = "-target";
-        argv[argc + 1] = t;
-        argc += 2;
+    var args = std.ArrayList([]const u8).empty;
+    defer {
+        for (args.items) |item| {
+            if (std.mem.startsWith(u8, item, "-Wl,-rpath,")) gpa.free(item);
+        }
+        args.deinit(gpa);
     }
-    // one section per function so the linker can drop unused trap routines
-    argv[argc] = "-ffunction-sections";
-    argv[argc + 1] = "-fdata-sections";
-    argc += 2;
-    argv[argc] = object_path;
-    argc += 1;
+
+    addTarget(&args, gpa, triple) catch return error.LinkFailed;
+
+    args.appendSlice(gpa, &.{
+        "-ffunction-sections", "-fdata-sections", object_path,
+    }) catch return error.LinkFailed;
 
     if (dynamic) {
-        // link against liblc3 shared library
-        // search in: -L, ., /usr/local/lib
-        if (lib_path) |path| {
-            var user_flag_buf: [256]u8 = undefined;
-            const user_flag = std.fmt.bufPrint(&user_flag_buf, "-L{s}", .{path}) catch return error.LinkFailed;
-            argv[argc] = user_flag;
-            argc += 1;
-        }
-        argv[argc] = "-L.";
-        argc += 1;
-        argv[argc] = "-L/usr/local/lib";
-        argc += 1;
-        argv[argc] = "-llc3";
-        argc += 1;
-
-        // embed rpath so the runtime loader finds liblc3 without LD_LIBRARY_PATH
-        // resolve cwd for absolute rpaths (relative rpaths don't work on macOS dyld)
-        var cwd_buf: [std.fs.max_path_bytes]u8 = undefined;
-        const cwd_len = std.process.currentPath(io, &cwd_buf) catch 0;
-        const cwd = if (cwd_len > 0) cwd_buf[0..cwd_len] else ".";
-
-        if (lib_path) |path| {
-            // resolve lib_path to absolute: cwd + lib_path
-            const abs = std.fs.path.join(gpa, &.{ cwd, path }) catch return error.LinkFailed;
-            defer gpa.free(abs);
-            var rpath_buf: [256]u8 = undefined;
-            const rpath = std.fmt.bufPrint(&rpath_buf, "-Wl,-rpath,{s}", .{abs}) catch return error.LinkFailed;
-            argv[argc] = rpath;
-            argc += 1;
-        }
-        var cwd_rpath_buf: [256]u8 = undefined;
-        const cwd_rpath = std.fmt.bufPrint(&cwd_rpath_buf, "-Wl,-rpath,{s}", .{cwd}) catch return error.LinkFailed;
-        argv[argc] = cwd_rpath;
-        argc += 1;
-        argv[argc] = "-Wl,-rpath,/usr/local/lib";
-        argc += 1;
+        addDynamicRuntime(&args, gpa, io, lib_path) catch return error.LinkFailed;
     } else {
-        argv[argc] = runtime_path;
-        argc += 1;
+        args.append(gpa, runtime_path) catch return error.LinkFailed;
     }
 
-    argv[argc] = "-o";
-    argv[argc + 1] = output_path;
-    argv[argc + 2] = gcFlag(triple);
-    argc += 3;
+    args.appendSlice(gpa, &.{
+        "-o",
+        output_path,
+        gcFlag(triple),
+    }) catch return error.LinkFailed;
 
     if (!isDarwin(triple)) {
-        argv[argc] = "-no-pie";
-        argc += 1;
+        args.append(gpa, "-no-pie") catch return error.LinkFailed;
     }
 
-    var child = std.process.spawn(io, .{
-        .argv = argv[0..argc],
-        .stdout = .inherit,
-        .stderr = .inherit,
-    }) catch |err| {
-        std.log.err("failed to spawn clang: {s}", .{@errorName(err)});
-        return error.LinkFailed;
-    };
-
-    const term = child.wait(io) catch {
-        child.kill(io);
-        _ = child.wait(io) catch {};
-        return error.LinkFailed;
-    };
-
-    switch (term) {
-        .exited => |code| if (code != 0) {
-            std.log.err("clang exited with code {d}", .{code});
-            return error.LinkFailed;
-        },
-        .signal => |sig| {
-            std.log.err("clang killed by signal {d}", .{sig});
-            return error.LinkFailed;
-        },
-        else => |term_type| {
-            std.log.err("clang terminated: {s}", .{@tagName(term_type)});
-            return error.LinkFailed;
-        },
-    }
+    try runClang(io, gpa, clang, args.items);
 }
 
 /// generates the liblc3 shared library from the embedded runtime source
@@ -138,32 +72,87 @@ pub fn generateLib(
     const clang = findClang(gpa, io, environ_map) orelse return error.ClangNotFound;
     defer gpa.free(clang);
 
-    var argv: [12][]const u8 = undefined;
-    var argc: usize = 0;
-    argv[argc] = clang;
-    argc += 1;
-    if (triple) |t| {
-        argv[argc] = "-target";
-        argv[argc + 1] = t;
-        argc += 2;
-    }
-    argv[argc] = "-shared";
-    argc += 1;
-    argv[argc] = "-fPIC";
-    argc += 1;
+    var args = std.ArrayList([]const u8).empty;
+    defer args.deinit(gpa);
+
+    addTarget(&args, gpa, triple) catch return error.LinkFailed;
+
+    args.appendSlice(gpa, &.{
+        "-shared", "-fPIC",
+    }) catch return error.LinkFailed;
+
     if (isDarwin(triple)) {
-        argv[argc] = "-install_name";
-        argv[argc + 1] = "@rpath/liblc3.dylib";
-        argc += 2;
+        args.appendSlice(gpa, &.{
+            "-install_name", "@rpath/liblc3.dylib",
+        }) catch return error.LinkFailed;
     }
-    argv[argc] = source_path;
-    argc += 1;
-    argv[argc] = "-o";
-    argv[argc + 1] = output_path;
-    argc += 2;
+
+    args.appendSlice(gpa, &.{
+        source_path, "-o", output_path,
+    }) catch return error.LinkFailed;
+
+    try runClang(io, gpa, clang, args.items);
+}
+
+fn addTarget(
+    args: *std.ArrayList([]const u8),
+    gpa: std.mem.Allocator,
+    triple: ?[]const u8,
+) !void {
+    if (triple) |t| try args.appendSlice(gpa, &.{ "-target", t });
+}
+
+fn addDynamicRuntime(
+    args: *std.ArrayList([]const u8),
+    gpa: std.mem.Allocator,
+    io: std.Io,
+    lib_path: ?[]const u8,
+) !void {
+    if (lib_path) |path| {
+        try args.appendSlice(gpa, &.{ "-L", path });
+    }
+
+    try args.appendSlice(gpa, &.{
+        "-L", ".", "-L", "/usr/local/lib", "-llc3",
+    });
+
+    // embed rpaths so dyld/ld.so can find liblc3 without LD_LIBRARY_PATH
+    // use absolute paths: relative rpaths are not resolved by dyld on macOS
+    var cwd_buf: [std.fs.max_path_bytes]u8 = undefined;
+    const cwd_len = std.process.currentPath(io, &cwd_buf) catch 0;
+    const cwd = if (cwd_len > 0) cwd_buf[0..cwd_len] else ".";
+
+    // rpath order mirrors link search order: lib_path, cwd, /usr/local/lib
+    if (lib_path) |path| {
+        const abs = try std.fs.path.join(gpa, &.{ cwd, path });
+        defer gpa.free(abs);
+        const rpath = try std.fmt.allocPrint(gpa, "-Wl,-rpath,{s}", .{abs});
+        try args.append(gpa, rpath);
+    }
+    {
+        const rpath = try std.fmt.allocPrint(gpa, "-Wl,-rpath,{s}", .{cwd});
+        try args.append(gpa, rpath);
+    }
+    {
+        const rpath = try gpa.dupe(u8, "-Wl,-rpath,/usr/local/lib");
+        try args.append(gpa, rpath);
+    }
+}
+
+fn runClang(
+    io: std.Io,
+    gpa: std.mem.Allocator,
+    clang: []const u8,
+    args: []const []const u8,
+) LinkError!void {
+    var argv = std.ArrayList([]const u8).empty;
+    defer argv.deinit(gpa);
+
+    argv.append(gpa, clang) catch return error.LinkFailed;
+    argv.appendSlice(gpa, args) catch return error.LinkFailed;
 
     var child = std.process.spawn(io, .{
-        .argv = argv[0..argc],
+        .argv = argv.items,
         .stdout = .inherit,
         .stderr = .inherit,
     }) catch |err| {
