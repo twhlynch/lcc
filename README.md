@@ -16,8 +16,19 @@ LC-3 source -> ELK parser -> elk.Air -> lcc codegen -> LLVM IR -> LLVM optimizat
 lcc examples/hello.asm && ./hello
 ```
 
-The compiled program's exit status is R0 (truncated to 8 bits by the OS), so
-simple programs can be tested without traps.
+The compiled program's exit status depends on how it terminates. `halt` always
+exits with status 0. If the program falls off the end of code without a `halt`,
+R0 is used as the exit status (truncated by the OS).
+
+### Command-line arguments
+
+Compiled programs can receive command-line arguments, which are forwarded to
+`getc` / `in` input. Arguments are joined with spaces and consumed before
+falling back to stdin:
+
+```sh
+lcc examples/echo.asm && ./echo hi there
+```
 
 Diagnostics are reported by ELK's parser.
 
@@ -83,7 +94,7 @@ statically linked. Use `-dynamic` to link against a shared library instead (see
 | PUTS  | x22    | Print the NUL-terminated string at mem[R0]    |
 | IN    | x23    | Prompt `Input> `, read and echo one character |
 | PUTSP | x24    | Like PUTS but two characters per word         |
-| HALT  | x25    | Flush output and exit 0                       |
+| HALT  | x25    | Flush output and exit with status 0           |
 | PUTN  | x26    | Print R0 as an unsigned decimal with newline  |
 | REG   | x27    | Dump registers, PC, and condition codes       |
 
