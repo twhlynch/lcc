@@ -174,12 +174,12 @@ pub fn compileAndLink(
             std.Io.Dir.cwd().deleteFile(io, scratch.rt) catch {};
         }
         // -L specified: link against the user's library, skip generation
-        try linker.link(io, gpa, environ_map, scratch.obj, "", triple, output_path, true, lib_path orelse ".");
+        try linker.link(io, gpa, environ_map, scratch.obj, "", triple, output_path, true, lib_path);
     } else {
         // static: compile and link the runtime source
         errdefer std.Io.Dir.cwd().deleteFile(io, scratch.rt) catch {};
         try writeScratch(io, scratch.rt, runtime_source);
-        try linker.link(io, gpa, environ_map, scratch.obj, scratch.rt, triple, output_path, false, ".");
+        try linker.link(io, gpa, environ_map, scratch.obj, scratch.rt, triple, output_path, false, null);
     }
 
     std.Io.Dir.cwd().deleteFile(io, scratch.obj) catch {};

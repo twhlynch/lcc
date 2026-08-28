@@ -22,7 +22,7 @@ pub fn link(
     triple: ?[]const u8,
     output_path: []const u8,
     dynamic: bool,
-    lib_path: []const u8,
+    lib_path: ?[]const u8,
 ) LinkError!void {
     const clang = findClang(gpa, io, environ_map) orelse return error.ClangNotFound;
     defer gpa.free(clang);
@@ -45,18 +45,16 @@ pub fn link(
 
     if (dynamic) {
         // link against liblc3 shared library
-        // search in: -lib-path, ., /usr/local/lib
-        var lib_flag_buf: [256]u8 = undefined;
-        const local_flag = std.fmt.bufPrint(&lib_flag_buf, "-L/usr/local/lib", .{}) catch return error.LinkFailed;
-        if (lib_path.len > 0 and !std.mem.eql(u8, lib_path, ".")) {
+        // search in: -L, ., /usr/local/lib
+        if (lib_path) |path| {
             var user_flag_buf: [256]u8 = undefined;
-            const user_flag = std.fmt.bufPrint(&user_flag_buf, "-L{s}", .{lib_path}) catch return error.LinkFailed;
+            const user_flag = std.fmt.bufPrint(&user_flag_buf, "-L{s}", .{path}) catch return error.LinkFailed;
             argv[argc] = user_flag;
             argc += 1;
         }
         argv[argc] = "-L.";
         argc += 1;
-        argv[argc] = local_flag;
+        argv[argc] = "-L/usr/local/lib";
         argc += 1;
         argv[argc] = "-llc3";
         argc += 1;
@@ -66,11 +64,11 @@ pub fn link(
         var cwd_buf: [std.fs.max_path_bytes]u8 = undefined;
         const cwd_len = std.process.currentPath(io, &cwd_buf) catch 0;
         const cwd = if (cwd_len > 0) cwd_buf[0..cwd_len] else ".";
-        var abs_buf: [std.fs.max_path_bytes]u8 = undefined;
 
-        if (lib_path.len > 0 and !std.mem.eql(u8, lib_path, ".")) {
+        if (lib_path) |path| {
             // resolve lib_path to absolute: cwd + lib_path
-            const abs = std.fmt.bufPrint(&abs_buf, "{s}/{s}", .{ cwd, lib_path }) catch return error.LinkFailed;
+            const abs = std.fs.path.join(gpa, &.{ cwd, path }) catch return error.LinkFailed;
+            defer gpa.free(abs);
             var rpath_buf: [256]u8 = undefined;
             const rpath = std.fmt.bufPrint(&rpath_buf, "-Wl,-rpath,{s}", .{abs}) catch return error.LinkFailed;
             argv[argc] = rpath;
