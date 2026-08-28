@@ -32,6 +32,11 @@ lcc examples/echo.asm && ./echo hi there
 
 Diagnostics are reported by ELK's parser.
 
+### Semantic differences from LC-3
+
+lcc is not an emulator. Some behaviors differ from the LC-3
+standard. See [docs/behaviour.md](docs/behaviour.md).
+
 ### Flags
 
 | Flag               | Description                               |
@@ -138,8 +143,3 @@ A Dockerfile is included for running the test suite on Ubuntu:
 docker build --platform linux/amd64 -t lcc-test .
 docker run --rm lcc-test
 ```
-
-## Semantic differences from LC-3
-
-lcc is not an emulator. Some behaviors differ from the LC-3
-standard. See [docs/behaviour.md](docs/behaviour.md).
