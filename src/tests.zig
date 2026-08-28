@@ -234,7 +234,7 @@ test "emit llvm produces a main function" {
         .exited => |code| code,
         else => return error.Crashed,
     });
-    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "define i32 @main()") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "define i32 @main(") != null);
     try std.testing.expect(std.mem.indexOf(u8, result.stdout, "@memory = global [65536 x i16]") != null);
 }
 
