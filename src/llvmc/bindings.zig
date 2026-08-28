@@ -90,6 +90,7 @@ pub extern fn LLVMAddGlobal(M: ModuleRef, Ty: TypeRef, Name: [*:0]const u8) Valu
 pub extern fn LLVMSetInitializer(GlobalVar: ValueRef, ConstantVal: ValueRef) void;
 pub extern fn LLVMConstInt(IntTy: TypeRef, N: c_ulonglong, SignExtend: LLVMBool) ValueRef;
 pub extern fn LLVMConstNull(Ty: TypeRef) ValueRef;
+pub extern fn LLVMGetParam(Fn: ValueRef, Index: c_uint) ValueRef;
 
 // builder
 pub extern fn LLVMAppendBasicBlockInContext(C: ContextRef, Fn: ValueRef, Name: [*:0]const u8) BasicBlockRef;
