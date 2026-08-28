@@ -19,7 +19,7 @@ pub const usage =
 ;
 
 pub const version =
-    \\lcc 0.1.0
+    \\lcc 0.2.0
     \\Copyright (C) 2026 Tom Lynch
     \\License GPL-3.0
     \\
