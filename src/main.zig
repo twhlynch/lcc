@@ -43,7 +43,9 @@ fn compile(
             std.log.err("file not found: {s}", .{options.input});
             return error.CompileFailed;
         },
-        else => |other| return other,
+        else => |other| {
+            return other;
+        },
     };
 }
 
@@ -78,15 +80,21 @@ pub fn main(init: std.process.Init) !u8 {
             try out.flush();
             return 2;
         },
-        else => |other| return other,
+        else => |other| {
+            return other;
+        },
     };
     try out.flush();
     const options = switch (parsed) {
         .help => return 0,
         .version => return 0,
         .generate_liblc3 => |gl| {
-            const triple = compiler.resolveTriple(gpa, gl.target, gl.arch) catch |err| return err;
-            defer if (triple) |t| gpa.free(t);
+            const triple = compiler.resolveTriple(gpa, gl.target, gl.arch) catch |err| {
+                return err;
+            };
+            defer if (triple) |t| {
+                gpa.free(t);
+            };
 
             compiler.generateLiblc3(
                 io,
@@ -132,10 +140,16 @@ pub fn main(init: std.process.Init) !u8 {
     diags.summarize();
 
     try printSummary(out, &program);
-    if (options.emit_llvm) try out.writeByte('\n');
+    if (options.emit_llvm) {
+        try out.writeByte('\n');
+    }
 
-    const triple = compiler.resolveTriple(gpa, options.target, options.arch) catch |err| return err;
-    defer if (triple) |t| gpa.free(t);
+    const triple = compiler.resolveTriple(gpa, options.target, options.arch) catch |err| {
+        return err;
+    };
+    defer if (triple) |t| {
+        gpa.free(t);
+    };
 
     compiler.compileAndLink(
         io,
@@ -194,7 +208,8 @@ pub fn main(init: std.process.Init) !u8 {
 fn defaultOutput(input: []const u8) []const u8 {
     const basename = std.fs.path.basename(input);
     const ext = std.fs.path.extension(basename);
-    if (ext.len > 0 and ext.len < basename.len)
+    if (ext.len > 0 and ext.len < basename.len) {
         return basename[0 .. basename.len - ext.len];
+    }
     return "a.out";
 }

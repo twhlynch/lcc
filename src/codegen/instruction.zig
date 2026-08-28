@@ -32,7 +32,9 @@ pub fn lower(cg: *CodeGen, instruction: elk.Instruction, index: usize) codegen.E
             return false;
         },
 
-        .br => |ops| return br(cg, ops.condition.value, ops.dest, index),
+        .br => |ops| {
+            return br(cg, ops.condition.value, ops.dest, index);
+        },
         .jmp => |ops| {
             cg.dispatchTo(cg.loadReg(ops.base.value.code));
             return true;
@@ -54,7 +56,9 @@ pub fn lower(cg: *CodeGen, instruction: elk.Instruction, index: usize) codegen.E
             return true;
         },
 
-        .trap => |ops| return traps.lower(cg, ops.vect.value.immediate.integer, index),
+        .trap => |ops| {
+            return traps.lower(cg, ops.vect.value.immediate.integer, index);
+        },
 
         .lea => |ops| {
             const address = try resolvedAddress(cg, ops.src, index);
@@ -152,17 +156,22 @@ fn br(
     index: usize,
 ) codegen.Error!bool {
     const bits = @intFromEnum(mask);
-    if (bits == 0) return false;
+    if (bits == 0) {
+        return false;
+    }
 
     const cc = cg.loadCc();
 
     var cond: ?llvm.bindings.ValueRef = null;
-    if (bits & 0b100 != 0)
+    if (bits & 0b100 != 0) {
         cond = orInto(cg, cond, cg.builder.buildIcmpZero(.slt, cc, "n"));
-    if (bits & 0b010 != 0)
+    }
+    if (bits & 0b010 != 0) {
         cond = orInto(cg, cond, cg.builder.buildIcmpZero(.eq, cc, "z"));
-    if (bits & 0b001 != 0)
+    }
+    if (bits & 0b001 != 0) {
         cond = orInto(cg, cond, cg.builder.buildIcmpZero(.sgt, cc, "p"));
+    }
 
     const target = try resolvedTarget(cg, dest, index);
     _ = cg.builder.buildCondBr(cond.?, cg.blocks[target], cg.blocks[index + 1]);
@@ -174,7 +183,9 @@ fn orInto(
     current: ?llvm.bindings.ValueRef,
     next: llvm.bindings.ValueRef,
 ) llvm.bindings.ValueRef {
-    if (current) |c| return cg.builder.buildOr(c, next, "");
+    if (current) |c| {
+        return cg.builder.buildOr(c, next, "");
+    }
     return next;
 }
 

@@ -125,11 +125,19 @@ fn isDarwin(b: *std.Build) bool {
 fn queryLlvmConfig(b: *std.Build, cmd: []const u8, flag: []const u8) ?[]const u8 {
     const result = std.process.run(b.graph.arena, b.graph.io, .{
         .argv = &.{ cmd, flag },
-    }) catch return null;
+    }) catch {
+        return null;
+    };
 
     switch (result.term) {
-        .exited => |code| if (code != 0) return null,
-        else => return null,
+        .exited => |code| {
+            if (code != 0) {
+                return null;
+            }
+        },
+        else => {
+            return null;
+        },
     }
 
     return b.dupePath(std.mem.trim(u8, result.stdout, " \n\r\t"));

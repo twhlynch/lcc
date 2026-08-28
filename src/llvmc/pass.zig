@@ -34,7 +34,9 @@ pub fn runDefault(
     module: module_mod.Module,
     machine: target_mod.TargetMachine,
 ) PassError!void {
-    if (level == .none) return;
+    if (level == .none) {
+        return;
+    }
 
     _ = gpa;
     const options = bindings.LLVMCreatePassBuilderOptions();

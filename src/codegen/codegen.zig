@@ -186,7 +186,9 @@ pub const CodeGen = struct {
                 .instruction => |inst| {
                     const terminated = try instruction.lower(&cg, inst, i);
                     // fall through unless the instruction ended its block
-                    if (!terminated) _ = cg.builder.buildBr(cg.blocks[i + 1]);
+                    if (!terminated) {
+                        _ = cg.builder.buildBr(cg.blocks[i + 1]);
+                    }
                 },
             }
         }

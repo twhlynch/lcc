@@ -24,37 +24,53 @@ pub fn link(
     dynamic: bool,
     lib_path: ?[]const u8,
 ) LinkError!void {
-    const clang = findClang(gpa, io, environ_map) orelse return error.ClangNotFound;
+    const clang = findClang(gpa, io, environ_map) orelse {
+        return error.ClangNotFound;
+    };
     defer gpa.free(clang);
 
     var args = std.ArrayList([]const u8).empty;
     defer {
         for (args.items) |item| {
-            if (std.mem.startsWith(u8, item, "-Wl,-rpath,")) gpa.free(item);
+            if (std.mem.startsWith(u8, item, "-Wl,-rpath,")) {
+                gpa.free(item);
+            }
         }
         args.deinit(gpa);
     }
 
-    addTarget(&args, gpa, triple) catch return error.LinkFailed;
+    addTarget(&args, gpa, triple) catch {
+        return error.LinkFailed;
+    };
 
     args.appendSlice(gpa, &.{
         "-ffunction-sections", "-fdata-sections", object_path,
-    }) catch return error.LinkFailed;
+    }) catch {
+        return error.LinkFailed;
+    };
 
     if (dynamic) {
-        addDynamicRuntime(&args, gpa, io, lib_path) catch return error.LinkFailed;
+        addDynamicRuntime(&args, gpa, io, lib_path) catch {
+            return error.LinkFailed;
+        };
     } else {
-        args.append(gpa, runtime_path) catch return error.LinkFailed;
+        args.append(gpa, runtime_path) catch {
+            return error.LinkFailed;
+        };
     }
 
     args.appendSlice(gpa, &.{
         "-o",
         output_path,
         gcFlag(triple),
-    }) catch return error.LinkFailed;
+    }) catch {
+        return error.LinkFailed;
+    };
 
     if (!isDarwin(triple)) {
-        args.append(gpa, "-no-pie") catch return error.LinkFailed;
+        args.append(gpa, "-no-pie") catch {
+            return error.LinkFailed;
+        };
     }
 
     try runClang(io, gpa, clang, args.items);
@@ -69,27 +85,37 @@ pub fn generateLib(
     output_path: []const u8,
     triple: ?[]const u8,
 ) LinkError!void {
-    const clang = findClang(gpa, io, environ_map) orelse return error.ClangNotFound;
+    const clang = findClang(gpa, io, environ_map) orelse {
+        return error.ClangNotFound;
+    };
     defer gpa.free(clang);
 
     var args = std.ArrayList([]const u8).empty;
     defer args.deinit(gpa);
 
-    addTarget(&args, gpa, triple) catch return error.LinkFailed;
+    addTarget(&args, gpa, triple) catch {
+        return error.LinkFailed;
+    };
 
     args.appendSlice(gpa, &.{
         "-shared", "-fPIC",
-    }) catch return error.LinkFailed;
+    }) catch {
+        return error.LinkFailed;
+    };
 
     if (isDarwin(triple)) {
         args.appendSlice(gpa, &.{
             "-install_name", "@rpath/liblc3.dylib",
-        }) catch return error.LinkFailed;
+        }) catch {
+            return error.LinkFailed;
+        };
     }
 
     args.appendSlice(gpa, &.{
         source_path, "-o", output_path,
-    }) catch return error.LinkFailed;
+    }) catch {
+        return error.LinkFailed;
+    };
 
     try runClang(io, gpa, clang, args.items);
 }
@@ -99,7 +125,9 @@ fn addTarget(
     gpa: std.mem.Allocator,
     triple: ?[]const u8,
 ) !void {
-    if (triple) |t| try args.appendSlice(gpa, &.{ "-target", t });
+    if (triple) |t| {
+        try args.appendSlice(gpa, &.{ "-target", t });
+    }
 }
 
 fn addDynamicRuntime(
@@ -148,8 +176,12 @@ fn runClang(
     var argv = std.ArrayList([]const u8).empty;
     defer argv.deinit(gpa);
 
-    argv.append(gpa, clang) catch return error.LinkFailed;
-    argv.appendSlice(gpa, args) catch return error.LinkFailed;
+    argv.append(gpa, clang) catch {
+        return error.LinkFailed;
+    };
+    argv.appendSlice(gpa, args) catch {
+        return error.LinkFailed;
+    };
 
     var child = std.process.spawn(io, .{
         .argv = argv.items,
@@ -188,10 +220,10 @@ fn gcFlag(triple: ?[]const u8) []const u8 {
 }
 
 fn isDarwin(triple: ?[]const u8) bool {
-    if (triple) |t|
+    if (triple) |t| {
         return std.mem.indexOf(u8, t, "darwin") != null or
-            std.mem.indexOf(u8, t, "macos") != null or
-            std.mem.indexOf(u8, t, "ios") != null;
+            std.mem.indexOf(u8, t, "macos") != null;
+    }
     return @import("builtin").os.tag.isDarwin();
 }
 
@@ -204,22 +236,26 @@ fn findClang(
         if (map.get("PATH")) |path| {
             var dirs = std.mem.splitScalar(u8, path, ':');
             while (dirs.next()) |dir| {
-                if (findIn(gpa, io, dir)) |found|
+                if (findIn(gpa, io, dir)) |found| {
                     return found;
+                }
             }
         }
     }
 
     for (candidate_dirs) |dir| {
-        if (findIn(gpa, io, dir)) |found|
+        if (findIn(gpa, io, dir)) |found| {
             return found;
+        }
     }
 
     return null;
 }
 
 fn findIn(gpa: std.mem.Allocator, io: std.Io, dir: []const u8) ?[]u8 {
-    const path = std.fmt.allocPrint(gpa, "{s}/clang", .{dir}) catch return null;
+    const path = std.fmt.allocPrint(gpa, "{s}/clang", .{dir}) catch {
+        return null;
+    };
 
     std.Io.Dir.cwd().access(io, path, .{ .execute = true }) catch {
         gpa.free(path);

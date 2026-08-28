@@ -20,7 +20,9 @@ pub const Program = struct {
     pub fn deinit(program: *Program, gpa: std.mem.Allocator) void {
         program.air.deinit(gpa);
         gpa.free(program.text);
-        if (program.source.path) |path| gpa.free(path);
+        if (program.source.path) |path| {
+            gpa.free(path);
+        }
     }
 };
 
@@ -68,10 +70,7 @@ var obj_scratch_buf: [64]u8 = undefined;
 var rt_scratch_buf: [64]u8 = undefined;
 
 fn initScratchPaths(source_path: ?[]const u8) struct { obj: []const u8, rt: []const u8 } {
-    const stem = if (source_path) |p|
-        std.fs.path.basename(p)
-    else
-        "lcc-tmp";
+    const stem = if (source_path) |p| std.fs.path.basename(p) else "lcc-tmp";
     const obj = std.fmt.bufPrint(&obj_scratch_buf, ".{s}.o", .{stem}) catch "lcc-tmp.o";
     const rt = std.fmt.bufPrint(&rt_scratch_buf, ".{s}.c", .{stem}) catch "lcc-tmp.c";
     return .{ .obj = obj, .rt = rt };
@@ -97,19 +96,20 @@ pub fn resolveTriple(
     target: ?[]const u8,
     arch: ?[]const u8,
 ) error{OutOfMemory}!?[]u8 {
-    if (target) |t| return try gpa.dupe(u8, t);
+    if (target) |t| {
+        return try gpa.dupe(u8, t);
+    }
 
-    const arch_name = arch orelse return null;
+    const arch_name = arch orelse {
+        return null;
+    };
 
     const host = llvm.bindings.LLVMGetDefaultTargetTriple();
     defer llvm.bindings.LLVMDisposeMessage(host);
     const triple = std.mem.span(host);
 
     // keep vendor-os-environment, swap the architecture
-    const rest = if (std.mem.indexOfScalar(u8, triple, '-')) |dash|
-        triple[dash..]
-    else
-        "";
+    const rest = if (std.mem.indexOfScalar(u8, triple, '-')) |dash| triple[dash..] else "";
     return try std.fmt.allocPrint(gpa, "{s}{s}", .{ arch_name, rest });
 }
 
@@ -133,7 +133,10 @@ pub fn compileAndLink(
         const triple_z = try gpa.dupeZ(u8, t);
         defer gpa.free(triple_z);
         break :blk try llvm.target.TargetMachine.create(triple_z, codeGenLevel(level));
-    } else try llvm.target.TargetMachine.createDefault(codeGenLevel(level));
+    } else blk: {
+        break :blk try llvm.target.TargetMachine.createDefault(codeGenLevel(level));
+    };
+
     defer machine.dispose();
     machine.configureModule(output.module);
 
@@ -183,7 +186,9 @@ pub fn compileAndLink(
     }
 
     std.Io.Dir.cwd().deleteFile(io, scratch.obj) catch {};
-    if (!dynamic) std.Io.Dir.cwd().deleteFile(io, scratch.rt) catch {};
+    if (!dynamic) {
+        std.Io.Dir.cwd().deleteFile(io, scratch.rt) catch {};
+    }
 }
 
 /// default shared library name per platform
@@ -230,7 +235,9 @@ fn codeGenLevel(level: llvm.pass.Level) llvm.bindings.CodeGenOptLevel {
 }
 
 fn printLlvm(io: std.Io, gpa: std.mem.Allocator, module: llvm.module.Module) void {
-    const text = module.printToStringAlloc(gpa) catch return;
+    const text = module.printToStringAlloc(gpa) catch {
+        return;
+    };
     defer gpa.free(text);
 
     var stdout_buffer: [1024]u8 = undefined;

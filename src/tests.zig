@@ -109,8 +109,12 @@ fn execWithStdin(
     const stdout_data = try drain(alloc, io, &child, .stdout);
     const stderr_data = try drain(alloc, io, &child, .stderr);
 
-    switch (child.wait(io) catch return error.ProgramCrashed) {
-        .exited => |code| return .{ .exit = code, .stdout = stdout_data, .stderr = stderr_data },
+    switch (child.wait(io) catch {
+        return error.ProgramCrashed;
+    }) {
+        .exited => |code| {
+            return .{ .exit = code, .stdout = stdout_data, .stderr = stderr_data };
+        },
         else => {
             alloc.free(stdout_data);
             alloc.free(stderr_data);
@@ -127,8 +131,12 @@ fn drain(
     comptime which: enum { stdout, stderr },
 ) ![]u8 {
     const file = switch (which) {
-        .stdout => child.stdout orelse return alloc.dupe(u8, ""),
-        .stderr => child.stderr orelse return alloc.dupe(u8, ""),
+        .stdout => child.stdout orelse {
+            return alloc.dupe(u8, "");
+        },
+        .stderr => child.stderr orelse {
+            return alloc.dupe(u8, "");
+        },
     };
 
     var buffer: [4096]u8 = undefined;
@@ -162,7 +170,9 @@ test "compile and run every example" {
     const cwd = std.Io.Dir.cwd();
     try cwd.createDirPath(std.testing.io, ".lcc-test");
 
-    for (examples) |expect| try checkExample(std.testing.allocator, expect, "-O0");
+    for (examples) |expect| {
+        try checkExample(std.testing.allocator, expect, "-O0");
+    }
 }
 
 test "optimised builds preserve behaviour" {
@@ -170,7 +180,9 @@ test "optimised builds preserve behaviour" {
     const cwd = std.Io.Dir.cwd();
     try cwd.createDirPath(std.testing.io, ".lcc-test");
 
-    for (examples) |expect| try checkExample(std.testing.allocator, expect, "-O2");
+    for (examples) |expect| {
+        try checkExample(std.testing.allocator, expect, "-O2");
+    }
 }
 
 test "output matches the elk emulator" {
@@ -180,7 +192,9 @@ test "output matches the elk emulator" {
     const io = std.testing.io;
 
     for (examples) |expect| {
-        if (!expect.match_emulator) continue;
+        if (!expect.match_emulator) {
+            continue;
+        }
         var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
         defer arena.deinit();
         const alloc = arena.allocator();
