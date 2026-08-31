@@ -115,6 +115,10 @@ pub fn lower(cg: *CodeGen, instruction: elk.Instruction, index: usize) codegen.E
             return false;
         },
 
+        .rti => {
+            return false;
+        },
+
         inline else => |_, tag| {
             std.log.err("instruction not supported yet: {s}", .{@tagName(tag)});
             return error.UnsupportedInstruction;
