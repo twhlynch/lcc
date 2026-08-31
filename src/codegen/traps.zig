@@ -63,6 +63,7 @@ pub fn lower(cg: *CodeGen, vect: u8, index: usize) codegen.Error!bool {
             return false;
         },
         else => {
+            std.log.warn("trap vector x{X:0>2} at x{X} has no native equivalent, treated as nop", .{ vect, cg.air.origin + index });
             return false;
         },
     }

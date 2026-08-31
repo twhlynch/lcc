@@ -116,6 +116,7 @@ pub fn lower(cg: *CodeGen, instruction: elk.Instruction, index: usize) codegen.E
         },
 
         .rti => {
+            std.log.warn("rti instruction at x{X} treated as nop", .{cg.air.origin + index});
             return false;
         },
 
