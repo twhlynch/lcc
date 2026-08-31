@@ -2,9 +2,9 @@
 //!
 //! one basic block per LC-3 word, plus an exit block and a shared dispatch
 //! block for indirect jumps. R0-R7 and the condition code live in stack slots
-//! so values merge correctly across block boundaries. data words are stored
-//! into memory before execution starts; executing one traps. instructions
-//! are never fetched from memory, so no self-modifying code.
+//! so values merge correctly across block boundaries. all encoded program
+//! words are stored into memory before execution starts so programs can
+//! self-read. execution still follows basic blocks, so no self-modifying code.
 
 const std = @import("std");
 
@@ -173,12 +173,9 @@ pub const CodeGen = struct {
         );
         bindings.LLVMSetInitializer(cg.memory_global, llvm.value.constNull(memory_type));
 
-        // store all data words before execution starts
+        // store all encoded words into memory before execution starts
         for (air.lines.items, 0..) |line, i| {
-            switch (line.statement) {
-                .raw_word => |word| try cg.storeDataWord(i, word),
-                .instruction => {},
-            }
+            try cg.storeProgramWord(i, line.statement.encode());
         }
 
         for (0..line_count) |i| {
@@ -236,8 +233,8 @@ pub const CodeGen = struct {
         return output;
     }
 
-    /// stores one data word at its address
-    fn storeDataWord(cg: *CodeGen, index: usize, word: u16) Error!void {
+    /// stores one encoded word at its address
+    fn storeProgramWord(cg: *CodeGen, index: usize, word: u16) Error!void {
         const address = llvm.value.constInt(
             cg.word_type,
             @intCast(cg.air.origin + index),
