@@ -62,7 +62,7 @@ pub fn lower(cg: *CodeGen, instruction: elk.Instruction, index: usize) codegen.E
 
         .lea => |ops| {
             const address = try resolvedAddress(cg, ops.src, index);
-            cg.writeReg(ops.dest.value.code, address);
+            cg.writeRegNoCc(ops.dest.value.code, address);
             return false;
         },
 
