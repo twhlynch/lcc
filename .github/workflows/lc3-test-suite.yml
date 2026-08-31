@@ -1,0 +1,27 @@
+name: LC-3 Test Suite
+
+on:
+  workflow_dispatch:
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: mlugg/setup-zig@v2
+        with:
+          version: 0.16.0
+
+      - name: Install LLVM
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y llvm-dev clang
+
+      - name: Build
+        run: zig build
+
+      - uses: twhlynch/lc3-test-suite@v1
+        with:
+          assemble: "$GITHUB_WORKSPACE/zig-out/bin/lcc %s -o %o"
+          emulate: "%o"
