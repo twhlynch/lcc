@@ -155,8 +155,7 @@ pub const CodeGen = struct {
         inline for (0..8) |code| {
             var name_buffer: [8]u8 = undefined;
             const name = std.fmt.bufPrintZ(&name_buffer, "r{d}", .{code}) catch unreachable;
-            cg.reg_slots[code] =
-                bindings.LLVMBuildAlloca(cg.builder.ref, cg.word_type, name.ptr);
+            cg.reg_slots[code] = bindings.LLVMBuildAlloca(cg.builder.ref, cg.word_type, name.ptr);
         }
         cg.cc_slot = cg.builder.buildAlloca(cg.word_type, "cc");
         cg.dispatch_slot = cg.builder.buildAlloca(cg.word_type, "target");
@@ -183,10 +182,8 @@ pub const CodeGen = struct {
             const name = std.fmt.bufPrintZ(&name_buffer, "w{d}", .{i}) catch unreachable;
             cg.blocks[i] = bindings.LLVMAppendBasicBlockInContext(context.ref, main_fn, name.ptr);
         }
-        cg.blocks[line_count] =
-            bindings.LLVMAppendBasicBlockInContext(context.ref, main_fn, "exit");
-        cg.dispatch_block =
-            bindings.LLVMAppendBasicBlockInContext(context.ref, main_fn, "dispatch");
+        cg.blocks[line_count] = bindings.LLVMAppendBasicBlockInContext(context.ref, main_fn, "exit");
+        cg.dispatch_block = bindings.LLVMAppendBasicBlockInContext(context.ref, main_fn, "dispatch");
 
         _ = cg.builder.buildBr(cg.blocks[0]);
 
@@ -217,8 +214,7 @@ pub const CodeGen = struct {
         // dispatch maps a pending indirect target onto its word's block
         cg.builder.positionAtEnd(cg.dispatch_block);
         const pending = cg.builder.buildLoad(cg.word_type, cg.dispatch_slot, "target");
-        const bad_target =
-            bindings.LLVMAppendBasicBlockInContext(context.ref, main_fn, "bad_target");
+        const bad_target = bindings.LLVMAppendBasicBlockInContext(context.ref, main_fn, "bad_target");
         const switch_inst = cg.builder.buildSwitch(pending, bad_target, line_count);
         for (0..line_count) |j| {
             llvm.builder.Builder.addCase(

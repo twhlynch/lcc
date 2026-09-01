@@ -73,10 +73,8 @@ pub fn lower(cg: *CodeGen, instruction: elk.Instruction, index: usize) codegen.E
             return false;
         },
         .ldi => |ops| {
-            const indirect_pointer =
-                cg.memoryPointer(try resolvedAddress(cg, ops.src, index));
-            const address =
-                cg.builder.buildLoad(cg.word_type, indirect_pointer, "addr");
+            const indirect_pointer = cg.memoryPointer(try resolvedAddress(cg, ops.src, index));
+            const address = cg.builder.buildLoad(cg.word_type, indirect_pointer, "addr");
             const pointer = cg.memoryPointer(address);
             const value = cg.builder.buildLoad(cg.word_type, pointer, "v");
             cg.writeReg(ops.dest.value.code, value);
@@ -98,10 +96,8 @@ pub fn lower(cg: *CodeGen, instruction: elk.Instruction, index: usize) codegen.E
             return false;
         },
         .sti => |ops| {
-            const indirect_pointer =
-                cg.memoryPointer(try resolvedAddress(cg, ops.dest, index));
-            const address =
-                cg.builder.buildLoad(cg.word_type, indirect_pointer, "addr");
+            const indirect_pointer = cg.memoryPointer(try resolvedAddress(cg, ops.dest, index));
+            const address = cg.builder.buildLoad(cg.word_type, indirect_pointer, "addr");
             const pointer = cg.memoryPointer(address);
             _ = cg.builder.buildStore(cg.loadReg(ops.src.value.code), pointer);
             return false;
