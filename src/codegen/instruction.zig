@@ -50,8 +50,9 @@ pub fn lower(cg: *CodeGen, instruction: elk.Instruction, index: usize) codegen.E
             return true;
         },
         .jsrr => |ops| {
+            const target = cg.loadReg(ops.base.value.code);
             cg.writeRegNoCc(7, cg.pcValue(index));
-            cg.dispatchTo(cg.loadReg(ops.base.value.code));
+            cg.dispatchTo(target);
             return true;
         },
 
