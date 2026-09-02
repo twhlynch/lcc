@@ -22,7 +22,6 @@ pub const Vect = struct {
 pub fn lower(cg: *CodeGen, vect: u8, index: usize) codegen.Error!bool {
     switch (vect) {
         Vect.getc => {
-            // elk does not update the condition code on getc/in
             const char = cg.callRuntime(.getc, &.{});
             cg.writeRegNoCc(0, char);
             return false;
@@ -46,7 +45,6 @@ pub fn lower(cg: *CodeGen, vect: u8, index: usize) codegen.Error!bool {
         },
         Vect.halt => {
             _ = cg.callRuntime(.halt, &.{});
-            // lc3_halt does not return
             _ = cg.builder.buildUnreachable();
             return true;
         },

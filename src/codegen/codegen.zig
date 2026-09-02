@@ -159,7 +159,7 @@ pub const CodeGen = struct {
         }
         cg.cc_slot = cg.builder.buildAlloca(cg.word_type, "cc");
         cg.dispatch_slot = cg.builder.buildAlloca(cg.word_type, "target");
-        // elk starts with all registers cleared; match it
+        // starts with all registers cleared
         const zero = llvm.value.constInt(cg.word_type, 0);
         for (cg.reg_slots) |slot| _ = cg.builder.buildStore(zero, slot);
         _ = cg.builder.buildStore(zero, cg.cc_slot);

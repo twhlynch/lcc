@@ -44,7 +44,6 @@ pub fn lower(cg: *CodeGen, instruction: elk.Instruction, index: usize) codegen.E
             return true;
         },
         .jsr => |ops| {
-            // R7 <- address of the following word, CC untouched
             cg.writeRegNoCc(7, cg.pcValue(index));
             const target = try resolvedTarget(cg, ops.dest, index);
             _ = cg.builder.buildBr(cg.blocks[target]);
