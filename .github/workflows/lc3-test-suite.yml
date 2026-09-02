@@ -21,7 +21,8 @@ jobs:
       - name: Build
         run: zig build
 
-      - uses: twhlynch/lc3-test-suite@v1
+      - uses: twhlynch/lc3-test-suite@v2
         with:
           assemble: "$GITHUB_WORKSPACE/zig-out/bin/lcc %s -o %o"
           emulate: "%o"
+          extensions: "true"
