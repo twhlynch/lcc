@@ -224,7 +224,14 @@ pub const CodeGen = struct {
             );
         }
         cg.builder.positionAtEnd(bad_target);
-        _ = cg.builder.buildUnreachable();
+        // load the bad target address that failed the switch
+        const current = cg.builder.buildLoad(cg.word_type, cg.dispatch_slot, "cur");
+        // increment to the next address (like falling through a NOP)
+        const one = llvm.value.constInt(cg.word_type, 1);
+        const next = cg.builder.buildAdd(current, one, "next");
+        // update the pending target and retry dispatch
+        _ = cg.builder.buildStore(next, cg.dispatch_slot);
+        _ = cg.builder.buildBr(cg.dispatch_block);
 
         return output;
     }
