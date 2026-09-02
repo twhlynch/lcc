@@ -202,6 +202,7 @@ pub const CodeGen = struct {
                         _ = cg.builder.buildBr(cg.blocks[i + 1]);
                     }
                 },
+                .unresolved_word => unreachable,
             }
         }
 
