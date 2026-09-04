@@ -17,7 +17,7 @@ const examples = [_]Example{
     .{ .name = "arithmetic", .exit_code = 12 },
     .{ .name = "echo", .exit_code = 0, .stdout = "1\n" },
     .{ .name = "fibonacci", .exit_code = 55 },
-    .{ .name = "greet", .exit_code = 0, .stdout = "Input> 1\n\nHello, 1\nOK\n" },
+    .{ .name = "greet", .exit_code = 0, .stdout = "Input> 1\n\nHello, 1\nOK\x00\n" },
     .{ .name = "hello", .exit_code = 0, .stdout = "Hello World!\n" },
     .{ .name = "loops", .exit_code = 15 },
     .{ .name = "memory", .exit_code = 12 },
