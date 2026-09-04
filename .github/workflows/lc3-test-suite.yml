@@ -23,6 +23,6 @@ jobs:
 
       - uses: twhlynch/lc3-test-suite@v2
         with:
-          assemble: "$GITHUB_WORKSPACE/zig-out/bin/lcc %s -o %o"
+          assemble: "$GITHUB_WORKSPACE/zig-out/bin/lcc %s -o %o -O3"
           emulate: "%o"
           extensions: "true"
