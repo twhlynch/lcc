@@ -13,3 +13,7 @@
 /.lcc-test/
 
 /liblc3.*
+
+*.out
+*.o
+*.obj
