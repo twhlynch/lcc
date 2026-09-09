@@ -7,8 +7,8 @@
 
     .dependencies = .{
         .elk = .{
-            .url = "git+https://codeberg.org/dxrcy/elk#2a1b4b931b45b12b3a70316c294cbf8ecdfc51b6",
-            .hash = "elk-0.1.7-_Fml5PeuBABoPDR_ZwuDkO_s-YVWU32IKVNcBQwtmnSm",
+            .url = "git+https://codeberg.org/dxrcy/elk#8b10b9cb02ef5416711e46cc77ad6270f9f24853",
+            .hash = "elk-0.1.8-_Fml5CixBAAFzCWMweAh_drudx-YkViQQw99Kt9nhxA_",
         },
         .zilc = .{
             .url = "git+https://codeberg.org/dxrcy/zilc#37ed2e03879727315a517fbfcac59e3814dc34e5",
