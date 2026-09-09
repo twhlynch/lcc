@@ -3,6 +3,8 @@ name: LC-3 Test Suite
 on:
   workflow_dispatch:
   pull_request:
+    paths-ignore:
+      - "**/*.md"
 
 jobs:
   run:
