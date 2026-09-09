@@ -12,6 +12,7 @@ jobs:
         include:
           - os: ubuntu-latest
           - os: macos-latest
+          - os: macos-latest-large
     steps:
       - uses: actions/checkout@v7
 
