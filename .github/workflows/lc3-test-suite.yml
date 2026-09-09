@@ -3,9 +3,6 @@ name: LC-3 Test Suite
 on:
   workflow_dispatch:
   pull_request:
-  push:
-    branches:
-      - main
 
 jobs:
   run:
