@@ -3,6 +3,8 @@ name: Test
 on:
   workflow_dispatch:
   pull_request:
+    paths-ignore:
+      - "**/*.md"
   push:
     branches:
       - main
