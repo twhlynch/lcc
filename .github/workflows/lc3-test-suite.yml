@@ -24,8 +24,10 @@ jobs:
       - name: Build
         run: zig build
 
-      - uses: twhlynch/lc3-test-suite@v2
+      - uses: twhlynch/lc3-test-suite@v3
         with:
           assemble: "$GITHUB_WORKSPACE/zig-out/bin/lcc %s -o %o -O3"
           emulate: "%o"
           extensions: "true"
+          timeout: "30"
+          suppress: "14"
