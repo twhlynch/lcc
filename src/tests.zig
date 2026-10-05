@@ -642,6 +642,86 @@ test "time and sleep set runs" {
     try std.testing.expect(elapsed >= 250);
 }
 
+test "seed and rand set runs" {
+    requireLcc(std.testing.io);
+    try ensureTestDir(std.testing.io);
+    const io = std.testing.io;
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    // build the zig implementation into an object lcc can link
+    const obj = test_dir ++ "/rand.o";
+    const build = try std.process.run(alloc, io, .{ .argv = &.{
+        "zig",
+        "build-obj",
+        "-OReleaseFast",
+        "src/runtime/sets/rand.zig",
+        "-femit-bin=" ++ obj,
+    } });
+    defer alloc.free(build.stdout);
+    defer alloc.free(build.stderr);
+    switch (build.term) {
+        .exited => |code| if (code != 0) {
+            std.debug.print("zig build-obj failed ({d}): {s}{s}\n", .{ code, build.stderr, build.stdout });
+            return error.BuildObjFailed;
+        },
+        else => {
+            std.debug.print("zig build-obj crashed\n{s}", .{build.stderr});
+            return error.BuildObjFailed;
+        },
+    }
+
+    // declarations stub pointing at the object we just built
+    try writeFixture(io, test_dir ++ "/randstub.c",
+        \\LCC_TRAP(0x40, seed);
+        \\LCC_TRAP(0x41, rand);
+        \\LCC_LINK(.lcc-test/rand.o)
+        \\
+    );
+    try writeFixture(io, test_dir ++ "/rand.asm",
+        \\.ORIG x3000
+        \\
+        \\    ld r0, sval
+        \\    seed
+        \\    rand
+        \\    putn
+        \\    rand
+        \\    putn
+        \\    rand
+        \\    putn
+        \\    halt
+        \\
+        \\sval .FILL #42
+        \\
+        \\.END
+        \\
+    );
+    defer cleanup(io, .{ .files = &.{ test_dir ++ "/randstub.c", test_dir ++ "/rand.asm", obj, test_dir ++ "/rand_out" } });
+
+    var out_buf: [128]u8 = undefined;
+    const out = try outPath(&out_buf, "rand_out");
+    const compile = try runLcc(alloc, io, &.{ lcc_exe, "-o", out, "-traps", test_dir ++ "/randstub.c", test_dir ++ "/rand.asm" });
+    try std.testing.expectEqual(@as(u8, 0), compile.code);
+
+    const run = try execWithStdin(alloc, io, &.{out}, "1\n");
+    try std.testing.expectEqual(@as(u8, 0), run.exit);
+
+    // the same DefaultPrng sequence the set generates for seed 42
+    var prng = std.Random.DefaultPrng.init(42);
+    var expected: [3]u16 = undefined;
+    for (&expected) |*value| {
+        value.* = prng.random().int(u16);
+    }
+
+    var lines = std.mem.splitScalar(u8, run.stdout, '\n');
+    for (expected) |want| {
+        const line = lines.next() orelse return error.MissingOutput;
+        const got = try std.fmt.parseInt(u16, line, 10);
+        try std.testing.expectEqual(want, got);
+    }
+}
+
 test "C++ trap sets link the C++ runtime automatically" {
     requireLcc(std.testing.io);
     try ensureTestDir(std.testing.io);
