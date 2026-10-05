@@ -9,6 +9,7 @@ const zilc = @import("zilc");
 
 test {
     _ = @import("tests.zig");
+    _ = @import("args.zig");
 }
 
 const Diagnostics = struct {
@@ -75,7 +76,7 @@ pub fn main(init: std.process.Init) !u8 {
     var cli_args = try zilc.collectArgs(args_allocator, init.minimal.args);
     defer cli_args.deinit(init.arena.allocator());
 
-    const parsed = args.parse(gpa, gpa, cli_args.items, out) catch |err| switch (err) {
+    const parsed = args.parse(gpa, init.arena.allocator(), cli_args.items, out) catch |err| switch (err) {
         error.Usage, error.ParseFailed, error.InvalidValue => {
             try out.flush();
             return 2;

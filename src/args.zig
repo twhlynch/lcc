@@ -13,6 +13,7 @@ pub const usage =
     \\  -dynamic          Link against liblc3 dynamically
     \\  -L<dir>           Directory to search for liblc3
     \\  -generate-liblc3  Generate liblc3 shared library
+    \\  -traps <set>      Load trap sets (repeatable)
     \\  -v, --version     Print version information
     \\  -h, --help        Show this help
     \\
@@ -43,6 +44,7 @@ pub const Options = struct {
     dynamic: bool,
     lib_path: ?[]const u8,
     generate_liblc3: bool,
+    trap_specs: []const []const u8,
 };
 
 pub const Result = union(enum) {
@@ -110,6 +112,104 @@ fn parseOptimize(dest: *anyopaque, src: []const u8, _: std.mem.Allocator) !void 
     }
 }
 
+/// zilc only accepts long flags written with a single dash under
+/// `single_dash_long`, so `--output` is rewritten to `-output` before
+/// parsing. The `--` marker and values that cannot be flags (`-`, `---x`)
+/// pass through untouched; everything after `--` is positional. rewrites
+/// share one scratch buffer so deinit frees everything.
+const Normalized = struct {
+    list: std.ArrayList([]const u8),
+    scratch: ?[]u8,
+
+    fn deinit(self: *Normalized, arena: std.mem.Allocator) void {
+        self.list.deinit(arena);
+        if (self.scratch) |buf| arena.free(buf);
+    }
+};
+
+fn isRewritable(arg: []const u8) bool {
+    return arg.len > 2 and arg[0] == '-' and arg[1] == '-' and arg[2] != '-';
+}
+
+fn normalizeArgs(arena: std.mem.Allocator, args: []const []const u8) !Normalized {
+    var list: std.ArrayList([]const u8) = .empty;
+    errdefer list.deinit(arena);
+
+    var scratch_len: usize = 0;
+    for (args) |arg| {
+        if (isRewritable(arg)) scratch_len += arg.len - 1;
+    }
+    const scratch: ?[]u8 = if (scratch_len > 0) try arena.alloc(u8, scratch_len) else null;
+    errdefer if (scratch) |buf| arena.free(buf);
+
+    var at: usize = 0;
+    var i: usize = 0;
+    while (i < args.len) : (i += 1) {
+        const arg = args[i];
+        if (std.mem.eql(u8, arg, "--")) {
+            try list.appendSlice(arena, args[i..]);
+            break;
+        }
+        if (isRewritable(arg)) {
+            const buf = scratch.?;
+            buf[at] = '-';
+            @memcpy(buf[at + 1 ..][0 .. arg.len - 2], arg[2..]);
+            try list.append(arena, buf[at .. at + arg.len - 1]);
+            at += arg.len - 1;
+            continue;
+        }
+        try list.append(arena, arg);
+    }
+    return .{ .list = list, .scratch = scratch };
+}
+
+/// mirrors zilc's cutArgPrefix: arguments that cannot be flag values
+fn looksLikeFlag(arg: []const u8) bool {
+    return (arg.len >= 2 and arg[0] == '-' and arg[1] != '-') or
+        (arg.len >= 3 and arg[0] == '-' and arg[1] == '-' and arg[2] != '-');
+}
+
+const TrapScan = struct {
+    specs: std.ArrayList([]const u8),
+    rest: std.ArrayList([]const u8),
+};
+
+/// pulls every `-traps <value>` pair out of the argument list so zilc
+/// never sees the flag (it would reject it as unknown, and repeated value
+/// flags would overwrite each other). each flag carries one set path.
+/// TODO: add this to zilc?
+fn extractTrapSpecs(arena: std.mem.Allocator, args: []const []const u8) !TrapScan {
+    var specs: std.ArrayList([]const u8) = .empty;
+    errdefer specs.deinit(arena);
+    var rest: std.ArrayList([]const u8) = .empty;
+    errdefer rest.deinit(arena);
+
+    var i: usize = 0;
+    while (i < args.len) : (i += 1) {
+        const arg = args[i];
+        if (std.mem.eql(u8, arg, "--")) {
+            try rest.appendSlice(arena, args[i..]);
+            break;
+        }
+        if (std.mem.eql(u8, arg, "-traps")) {
+            if (i + 1 >= args.len or std.mem.eql(u8, args[i + 1], "--") or looksLikeFlag(args[i + 1])) {
+                std.log.err("missing value for -traps", .{});
+                return error.Usage;
+            }
+            const value = args[i + 1];
+            if (value.len == 0) {
+                std.log.err("empty trap set path in -traps", .{});
+                return error.Usage;
+            }
+            try specs.append(arena, value);
+            i += 1;
+            continue;
+        }
+        try rest.append(arena, arg);
+    }
+    return .{ .specs = specs, .rest = rest };
+}
+
 pub fn parse(gpa: std.mem.Allocator, arena: std.mem.Allocator, args: []const []const u8, out: *std.Io.Writer) !Result {
     if (zilc.getMetaArg(args, .help)) |meta| {
         switch (meta) {
@@ -124,10 +224,21 @@ pub fn parse(gpa: std.mem.Allocator, arena: std.mem.Allocator, args: []const []c
         }
     }
 
-    var options: zilc.Options(template) = try .parse(gpa, arena, args, parse_config);
+    var normalized = try normalizeArgs(arena, args);
+    defer normalized.deinit(arena);
+
+    var scan = try extractTrapSpecs(arena, normalized.list.items);
+    defer scan.rest.deinit(arena);
+    errdefer scan.specs.deinit(arena);
+
+    var options: zilc.Options(template) = try .parse(gpa, arena, scan.rest.items, parse_config);
     defer options.deinit(arena);
 
     if (options.flags.generate_liblc3) {
+        if (scan.specs.items.len > 0) {
+            std.log.err("cannot combine -traps with -generate-liblc3", .{});
+            return error.Usage;
+        }
         return .{ .generate_liblc3 = .{
             .target = options.flags.target,
             .arch = options.flags.arch,
@@ -143,6 +254,9 @@ pub fn parse(gpa: std.mem.Allocator, arena: std.mem.Allocator, args: []const []c
         return error.Usage;
     }
 
+    // shrink so the returned slice can be freed by exact length
+    if (scan.specs.items.len > 0) try scan.specs.shrinkToLen(arena);
+
     return .{ .run = .{
         .input = input,
         .output = options.flags.output,
@@ -153,6 +267,7 @@ pub fn parse(gpa: std.mem.Allocator, arena: std.mem.Allocator, args: []const []c
         .dynamic = options.flags.dynamic,
         .lib_path = options.flags.lib_path,
         .generate_liblc3 = options.flags.generate_liblc3,
+        .trap_specs = scan.specs.items,
     } };
 }
 
@@ -163,12 +278,8 @@ test parse {
 
     const testParse = struct {
         fn testParse(args: []const []const u8) !Result {
-            var buf: [4096]u8 = undefined;
-            var fbs = std.io.fixedBufferStream(&buf);
-            var writer = std.Io.Writer{ .interface = .{
-                .context = @ptrCast(&fbs),
-                .writeFn = @ptrCast(&std.io.FixedBufferStream([]u8).write),
-            } };
+            var buf: [8192]u8 = undefined;
+            var writer = std.Io.Writer.fixed(&buf);
             return parse(std.testing.allocator, std.testing.allocator, args, &writer);
         }
     }.testParse;
@@ -244,4 +355,41 @@ test parse {
 
     // end-of-options marker
     try expectEqualStrings("file.asm", (try testParse(&.{ "--", "file.asm" })).run.input);
+
+    // no -traps: empty specs
+    try expectEqual(@as(usize, 0), (try testParse(&.{"f"})).run.trap_specs.len);
+
+    // -traps: one path per flag, repeated
+    {
+        const r = (try testParse(&.{ "-traps", "a.c", "-traps", "b.cpp", "f" })).run;
+        defer std.testing.allocator.free(r.trap_specs);
+        try expectEqual(@as(usize, 2), r.trap_specs.len);
+        try expectEqualStrings("a.c", r.trap_specs[0]);
+        try expectEqualStrings("b.cpp", r.trap_specs[1]);
+    }
+
+    // --traps: double dash is normalized too
+    {
+        const r = (try testParse(&.{ "--traps", "x", "f" })).run;
+        defer std.testing.allocator.free(r.trap_specs);
+        try expectEqual(@as(usize, 1), r.trap_specs.len);
+        try expectEqualStrings("x", r.trap_specs[0]);
+    }
+
+    // -traps after the -- marker stays positional
+    {
+        const r = (try testParse(&.{ "--", "-traps" })).run;
+        try expectEqualStrings("-traps", r.input);
+        try expectEqual(@as(usize, 0), r.trap_specs.len);
+    }
+
+    // -traps: missing or flag-shaped values
+    try std.testing.expectError(error.Usage, testParse(&.{"-traps"}));
+    try std.testing.expectError(error.Usage, testParse(&.{ "f", "-traps" }));
+    try std.testing.expectError(error.Usage, testParse(&.{ "-traps", "--", "f" }));
+    try std.testing.expectError(error.Usage, testParse(&.{ "-traps", "-o", "f" }));
+    try std.testing.expectError(error.Usage, testParse(&.{ "-traps", "", "f" }));
+
+    // -traps with -generate-liblc3 is rejected
+    try std.testing.expectError(error.Usage, testParse(&.{ "-traps", "x", "-generate-liblc3" }));
 }
