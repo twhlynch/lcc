@@ -34,9 +34,10 @@ fn compile(
     io: std.Io,
     gpa: std.mem.Allocator,
     options: args.Options,
+    table: *const trapsets.Table,
     diags: *Diagnostics,
 ) (error{CompileFailed} || compiler.Error)!compiler.Program {
-    return compiler.assembleFile(io, gpa, options.input, &diags.reporter) catch |err| switch (err) {
+    return compiler.assembleFile(io, gpa, options.input, &table.traps, &diags.reporter) catch |err| switch (err) {
         error.AssemblyFailed => {
             diags.summarize();
             return error.CompileFailed;
@@ -142,7 +143,18 @@ pub fn main(init: std.process.Init) !u8 {
     var diags: Diagnostics = undefined;
     diags.init(io);
 
-    var program = compile(io, gpa, options, &diags) catch |err| {
+    var table = trapsets.load(gpa, io, options.trap_specs) catch |err| switch (err) {
+        error.InvalidTrapSet => {
+            try out.flush();
+            return 2;
+        },
+        else => |other| {
+            return other;
+        },
+    };
+    defer table.deinit(gpa);
+
+    var program = compile(io, gpa, options, &table, &diags) catch |err| {
         std.log.err("compilation failed: {s}", .{@errorName(err)});
         try out.flush();
         return 1;
@@ -167,6 +179,7 @@ pub fn main(init: std.process.Init) !u8 {
         io,
         gpa,
         &program,
+        &table,
         init.environ_map,
         options.output orelse defaultOutput(options.input),
         compiler.optimizeLevel(options.optimize),
