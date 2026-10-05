@@ -10,9 +10,7 @@ const zilc = @import("zilc");
 
 test {
     _ = @import("tests.zig");
-    // TODO: re-enable; arg parse tests log std.log.err on expected failures,
-    // which zig counts as error logs and fails the test run
-    // _ = @import("args.zig");
+    _ = @import("args.zig");
 }
 
 const Diagnostics = struct {
@@ -80,8 +78,11 @@ pub fn main(init: std.process.Init) !u8 {
     var cli_args = try zilc.collectArgs(args_allocator, init.minimal.args);
     defer cli_args.deinit(init.arena.allocator());
 
-    const parsed = args.parse(gpa, init.arena.allocator(), cli_args.items, out) catch |err| switch (err) {
+    var errmsg: ?[]const u8 = null;
+    const parsed = args.parse(gpa, init.arena.allocator(), cli_args.items, out, &errmsg) catch |err| switch (err) {
         error.Usage, error.ParseFailed, error.InvalidValue => {
+            // zilc failures already reported themselves; only ours carry a message
+            if (errmsg) |msg| std.log.err("{s}", .{msg});
             try out.flush();
             return 2;
         },

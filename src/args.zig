@@ -108,6 +108,11 @@ const parse_config: zilc.ParseConfig = .{
     .joined_short_value = true,
 };
 
+fn isValidOptimize(src: []const u8) bool {
+    return std.mem.eql(u8, src, "none") or
+        (src.len == 1 and src[0] >= '0' and src[0] <= '3');
+}
+
 fn parseOptimize(dest: *anyopaque, src: []const u8, _: std.mem.Allocator) !void {
     const optimize: *?Optimize = @ptrCast(@alignCast(dest));
     if (std.mem.eql(u8, src, "none")) {
@@ -115,9 +120,27 @@ fn parseOptimize(dest: *anyopaque, src: []const u8, _: std.mem.Allocator) !void 
     } else if (src.len == 1 and src[0] >= '0' and src[0] <= '3') {
         optimize.* = @enumFromInt(src[0] - '0' + 1);
     } else {
-        std.log.err("invalid optimisation level '{s}' (expected -Onone or -O0..-O3)", .{src});
         return error.InvalidValue;
     }
+}
+
+/// zilc's parser callback can only return `error.InvalidValue`, so when
+/// that surfaces the rejected value is recovered from the argument list
+/// to keep the diagnostic specific.
+fn invalidOptimizeMessage(arena: std.mem.Allocator, argv: []const []const u8) ![]const u8 {
+    const fmt = "invalid optimisation level '{s}' (expected -Onone or -O0..-O3)";
+    for (argv, 0..) |arg, idx| {
+        const value: ?[]const u8 = if (std.mem.eql(u8, arg, "-O") or std.mem.eql(u8, arg, "-optimize"))
+            if (idx + 1 < argv.len) argv[idx + 1] else null
+        else if (std.mem.startsWith(u8, arg, "-O") and arg.len > 2)
+            arg[2..]
+        else
+            null;
+        if (value) |v| {
+            if (!isValidOptimize(v)) return std.fmt.allocPrint(arena, fmt, .{v});
+        }
+    }
+    return std.fmt.allocPrint(arena, "invalid optimisation level (expected -Onone or -O0..-O3)", .{});
 }
 
 /// zilc only accepts long flags written with a single dash under
@@ -185,8 +208,14 @@ const TrapScan = struct {
 /// pulls every `-traps <value>` pair out of the argument list so zilc
 /// never sees the flag (it would reject it as unknown, and repeated value
 /// flags would overwrite each other). each flag carries one set path.
+/// failures are reported through `errmsg` rather than logged: the cli
+/// layer owns diagnostics so unit tests can exercise error paths.
 /// TODO: add this to zilc?
-fn extractTrapSpecs(arena: std.mem.Allocator, args: []const []const u8) !TrapScan {
+fn extractTrapSpecs(
+    arena: std.mem.Allocator,
+    args: []const []const u8,
+    errmsg: *?[]const u8,
+) !TrapScan {
     var specs: std.ArrayList([]const u8) = .empty;
     errdefer specs.deinit(arena);
     var rest: std.ArrayList([]const u8) = .empty;
@@ -201,12 +230,12 @@ fn extractTrapSpecs(arena: std.mem.Allocator, args: []const []const u8) !TrapSca
         }
         if (std.mem.eql(u8, arg, "-traps")) {
             if (i + 1 >= args.len or std.mem.eql(u8, args[i + 1], "--") or looksLikeFlag(args[i + 1])) {
-                std.log.err("missing value for -traps", .{});
+                errmsg.* = "missing value for -traps";
                 return error.Usage;
             }
             const value = args[i + 1];
             if (value.len == 0) {
-                std.log.err("empty trap set path in -traps", .{});
+                errmsg.* = "empty trap set path in -traps";
                 return error.Usage;
             }
             try specs.append(arena, value);
@@ -218,7 +247,13 @@ fn extractTrapSpecs(arena: std.mem.Allocator, args: []const []const u8) !TrapSca
     return .{ .specs = specs, .rest = rest };
 }
 
-pub fn parse(gpa: std.mem.Allocator, arena: std.mem.Allocator, args: []const []const u8, out: *std.Io.Writer) !Result {
+pub fn parse(
+    gpa: std.mem.Allocator,
+    arena: std.mem.Allocator,
+    args: []const []const u8,
+    out: *std.Io.Writer,
+    errmsg: *?[]const u8,
+) !Result {
     if (zilc.getMetaArg(args, .help)) |meta| {
         switch (meta) {
             .help => {
@@ -235,16 +270,22 @@ pub fn parse(gpa: std.mem.Allocator, arena: std.mem.Allocator, args: []const []c
     var normalized = try normalizeArgs(arena, args);
     defer normalized.deinit(arena);
 
-    var scan = try extractTrapSpecs(arena, normalized.list.items);
+    var scan = try extractTrapSpecs(arena, normalized.list.items, errmsg);
     defer scan.rest.deinit(arena);
     errdefer scan.specs.deinit(arena);
 
-    var options: zilc.Options(template) = try .parse(gpa, arena, scan.rest.items, parse_config);
+    var options: zilc.Options(template) = zilc.Options(template).parse(gpa, arena, scan.rest.items, parse_config) catch |err| switch (err) {
+        error.InvalidValue => {
+            errmsg.* = try invalidOptimizeMessage(arena, scan.rest.items);
+            return error.InvalidValue;
+        },
+        else => |other| return other,
+    };
     defer options.deinit(arena);
 
     if (options.flags.generate_traps_header) {
         if (scan.specs.items.len > 0) {
-            std.log.err("cannot combine -traps with -generate-traps-header", .{});
+            errmsg.* = "cannot combine -traps with -generate-traps-header";
             return error.Usage;
         }
         return .generate_traps_header;
@@ -252,7 +293,7 @@ pub fn parse(gpa: std.mem.Allocator, arena: std.mem.Allocator, args: []const []c
 
     if (options.flags.generate_liblc3) {
         if (scan.specs.items.len > 0) {
-            std.log.err("cannot combine -traps with -generate-liblc3", .{});
+            errmsg.* = "cannot combine -traps with -generate-liblc3";
             return error.Usage;
         }
         return .{ .generate_liblc3 = .{
@@ -266,7 +307,7 @@ pub fn parse(gpa: std.mem.Allocator, arena: std.mem.Allocator, args: []const []c
         else => return error.Usage,
     };
     if (options.pos.items.len > 1) {
-        std.log.err("unexpected argument '{s}'", .{options.pos.items[1]});
+        errmsg.* = try std.fmt.allocPrint(arena, "unexpected argument '{s}'", .{options.pos.items[1]});
         return error.Usage;
     }
 
@@ -296,7 +337,8 @@ test parse {
         fn testParse(args: []const []const u8) !Result {
             var buf: [8192]u8 = undefined;
             var writer = std.Io.Writer.fixed(&buf);
-            return parse(std.testing.allocator, std.testing.allocator, args, &writer);
+            var errmsg: ?[]const u8 = null;
+            return parse(std.testing.allocator, std.testing.allocator, args, &writer, &errmsg);
         }
     }.testParse;
 
@@ -412,4 +454,25 @@ test parse {
     // -traps with the generated outputs is rejected
     try std.testing.expectError(error.Usage, testParse(&.{ "-traps", "x", "-generate-liblc3" }));
     try std.testing.expectError(error.Usage, testParse(&.{ "-traps", "x", "-generate-traps-header" }));
+
+    // failure diagnostics are returned to the caller instead of logged
+    {
+        var buf: [1024]u8 = undefined;
+        var writer = std.Io.Writer.fixed(&buf);
+        var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+        defer arena.deinit();
+        const a = arena.allocator();
+        var errmsg: ?[]const u8 = null;
+
+        try std.testing.expectError(error.Usage, parse(a, a, &.{"-traps"}, &writer, &errmsg));
+        try expectEqualStrings("missing value for -traps", errmsg.?);
+
+        errmsg = null;
+        try std.testing.expectError(error.InvalidValue, parse(a, a, &.{ "-O5", "f" }, &writer, &errmsg));
+        try expectEqualStrings("invalid optimisation level '5' (expected -Onone or -O0..-O3)", errmsg.?);
+
+        errmsg = null;
+        try std.testing.expectError(error.Usage, parse(a, a, &.{ "f", "g" }, &writer, &errmsg));
+        try expectEqualStrings("unexpected argument 'g'", errmsg.?);
+    }
 }
