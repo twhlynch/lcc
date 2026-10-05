@@ -167,13 +167,13 @@ pub fn compileAndLink(
     const scratch = initScratchPaths(program.source.path);
 
     errdefer std.Io.Dir.cwd().deleteFile(io, scratch.obj) catch {};
-    try writeScratch(io, scratch.obj, object);
+    try writeFile(io, scratch.obj, object);
 
     if (dynamic) {
         if (lib_path == null) {
             // no -L specified: auto-generate liblc3 in cwd
             errdefer std.Io.Dir.cwd().deleteFile(io, scratch.rt) catch {};
-            try writeScratch(io, scratch.rt, runtime_source);
+            try writeFile(io, scratch.rt, runtime_source);
             try linker.generateLib(io, gpa, environ_map, scratch.rt, defaultLibName(), triple);
             std.Io.Dir.cwd().deleteFile(io, scratch.rt) catch {};
         }
@@ -182,7 +182,7 @@ pub fn compileAndLink(
     } else {
         // static: compile and link the runtime source
         errdefer std.Io.Dir.cwd().deleteFile(io, scratch.rt) catch {};
-        try writeScratch(io, scratch.rt, runtime_source);
+        try writeFile(io, scratch.rt, runtime_source);
         try linker.link(io, gpa, environ_map, scratch.obj, scratch.rt, triple, output_path, false, null);
     }
 
@@ -208,7 +208,7 @@ pub fn generateLiblc3(
     const scratch = initScratchPaths(null);
 
     errdefer std.Io.Dir.cwd().deleteFile(io, scratch.rt) catch {};
-    try writeScratch(io, scratch.rt, runtime_source);
+    try writeFile(io, scratch.rt, runtime_source);
 
     try linker.generateLib(io, gpa, environ_map, scratch.rt, output_path, triple);
 
@@ -248,7 +248,8 @@ fn printLlvm(io: std.Io, gpa: std.mem.Allocator, module: llvm.module.Module) voi
     stdout_writer.interface.flush() catch {};
 }
 
-fn writeScratch(io: std.Io, path: []const u8, bytes: []const u8) (std.Io.File.OpenError || std.Io.Writer.Error)!void {
+/// writes bytes to path, creating or truncating it
+pub fn writeFile(io: std.Io, path: []const u8, bytes: []const u8) (std.Io.File.OpenError || std.Io.Writer.Error)!void {
     const file = try std.Io.Dir.cwd().createFile(io, path, .{});
     defer file.close(io);
 
