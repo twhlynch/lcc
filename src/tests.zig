@@ -573,7 +573,7 @@ test "trap set conflicts are rejected" {
     }
 }
 
-test "minecraft set registers its traps" {
+test "time and sleep set runs" {
     requireLcc(std.testing.io);
     try ensureTestDir(std.testing.io);
     const io = std.testing.io;
@@ -581,20 +581,65 @@ test "minecraft set registers its traps" {
     defer arena.deinit();
     const alloc = arena.allocator();
 
-    try writeFixture(io, test_dir ++ "/chat.asm",
+    // print the current epoch as two words: high then low
+    try writeFixture(io, test_dir ++ "/time.asm",
         \\.ORIG x3000
         \\
-        \\    chat
+        \\    time
+        \\    st r0, tlo
+        \\    add r0, r1, #0
+        \\    putn
+        \\    ld r0, tlo
+        \\    putn
         \\    halt
+        \\
+        \\tlo .FILL #0
         \\
         \\.END
         \\
     );
-    defer cleanup(io, .{ .files = &.{test_dir ++ "/chat.asm"} });
+    defer cleanup(io, .{ .files = &.{ test_dir ++ "/time.asm", test_dir ++ "/time_out" } });
 
-    const result = try runLcc(alloc, io, &.{ lcc_exe, "-traps", "src/runtime/sets/minecraft.cpp", "-emit-llvm", test_dir ++ "/chat.asm" });
-    try std.testing.expectEqual(@as(u8, 0), result.code);
-    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "call void @lcc_trap_chat(") != null);
+    var time_buf: [128]u8 = undefined;
+    const time_out = try outPath(&time_buf, "time_out");
+    const compile = try runLcc(alloc, io, &.{ lcc_exe, "-o", time_out, "-traps", "src/runtime/sets/time.cpp", test_dir ++ "/time.asm" });
+    try std.testing.expectEqual(@as(u8, 0), compile.code);
+
+    const run = try execWithStdin(alloc, io, &.{time_out}, "1\n");
+    try std.testing.expectEqual(@as(u8, 0), run.exit);
+
+    var lines = std.mem.splitScalar(u8, run.stdout, '\n');
+    const high = try std.fmt.parseInt(u32, lines.next().?, 10);
+    const low = try std.fmt.parseInt(u32, lines.next().?, 10);
+    const epoch = (@as(i64, @intCast(high)) << 16) + @as(i64, @intCast(low));
+    const now = std.Io.Timestamp.now(io, .real).toSeconds();
+    try std.testing.expect(@abs(now - epoch) < 300);
+
+    // sleep for 300ms; the delay must be visible in wall time
+    try writeFixture(io, test_dir ++ "/sleep.asm",
+        \\.ORIG x3000
+        \\
+        \\    ld r0, ms
+        \\    sleep
+        \\    halt
+        \\
+        \\ms  .FILL #300
+        \\
+        \\.END
+        \\
+    );
+    defer cleanup(io, .{ .files = &.{ test_dir ++ "/sleep.asm", test_dir ++ "/sleep_out" } });
+
+    var sleep_buf: [128]u8 = undefined;
+    const sleep_out = try outPath(&sleep_buf, "sleep_out");
+    const compile2 = try runLcc(alloc, io, &.{ lcc_exe, "-o", sleep_out, "-traps", "src/runtime/sets/time.cpp", test_dir ++ "/sleep.asm" });
+    try std.testing.expectEqual(@as(u8, 0), compile2.code);
+
+    const start = std.Io.Timestamp.now(io, .real);
+    const run2 = try execWithStdin(alloc, io, &.{sleep_out}, "1\n");
+    const elapsed = start.durationTo(std.Io.Timestamp.now(io, .real)).toMilliseconds();
+    try std.testing.expectEqual(@as(u8, 0), run2.exit);
+    try std.testing.expect(elapsed >= 250);
 }
 
 test "C++ trap sets link the C++ runtime automatically" {
