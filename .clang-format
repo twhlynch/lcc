@@ -1,5 +1,5 @@
 BasedOnStyle: LLVM
-Language: C
+Language: Cpp
 
 IndentWidth: 4
 TabWidth: 4
