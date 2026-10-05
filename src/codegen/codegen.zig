@@ -19,24 +19,6 @@ pub const Error = error{
     OutOfMemory,
 };
 
-/// native runtime functions for trap lowering
-pub const RuntimeFn = enum { getc, out, puts, in, putsp, halt, putn, reg };
-
-const runtime_names = [_][*:0]const u8{ "lc3_getc", "lc3_out", "lc3_puts", "lc3_in", "lc3_putsp", "lc3_halt", "lc3_putn", "lc3_reg" };
-
-/// llvm type of a native runtime function
-fn runtimeType(context: llvm.context.Context, which: RuntimeFn) bindings.TypeRef {
-    const word = llvm.types.int16(context);
-    const pointer = llvm.types.pointer(context);
-    return switch (which) {
-        .getc, .in => llvm.types.function(word, &.{}),
-        .out, .putn => llvm.types.function(llvm.types.void_(context), &.{word}),
-        .puts, .putsp => llvm.types.function(llvm.types.void_(context), &.{ pointer, word }),
-        .halt => llvm.types.function(llvm.types.void_(context), &.{}),
-        .reg => llvm.types.function(llvm.types.void_(context), &.{ word, word, word, word, word, word, word, word, word, word }),
-    };
-}
-
 /// everything the pipeline keeps alive between stages
 /// owned by the caller
 pub const Output = struct {
@@ -63,11 +45,20 @@ pub const CodeGen = struct {
     /// the flat LC-3 address space
     memory_global: bindings.ValueRef,
 
-    /// stack slots for R0-R7, the condition code and the pending
-    /// indirect jump target
-    reg_slots: [8]bindings.ValueRef,
+    /// stack slots for R0-R7 as one array, the condition code and the
+    /// pending indirect jump target
+    regs: bindings.ValueRef,
     cc_slot: bindings.ValueRef,
     dispatch_slot: bindings.ValueRef,
+
+    /// one shared trap context; pc is stored at each trap site
+    ctx_type: bindings.TypeRef,
+    ctx_slot: bindings.ValueRef,
+
+    /// symbol per trap vector; handlers are declared on demand
+    trap_symbols: *const [256]?[:0]const u8,
+    /// llvm type of a trap handler: void(ptr)
+    trap_fn_type: bindings.TypeRef,
 
     /// one basic block per LC-3 word; blocks[len] is the exit block
     blocks: []bindings.BasicBlockRef,
@@ -75,13 +66,11 @@ pub const CodeGen = struct {
     /// shared dispatch target for JMP/JSRR/RET
     dispatch_block: bindings.BasicBlockRef,
 
-    /// declarations of the native runtime trap functions
-    runtime_fns: [runtime_names.len]bindings.ValueRef,
-
     /// lowers a whole program into an LLVM module
     pub fn emit(
         air: *const elk.Air,
         gpa: std.mem.Allocator,
+        trap_symbols: *const [256]?[:0]const u8,
     ) Error!Output {
         const context = llvm.context.Context.create();
 
@@ -107,12 +96,15 @@ pub const CodeGen = struct {
             .gpa = gpa,
             .word_type = llvm.types.int16(context),
             .memory_global = undefined,
-            .reg_slots = undefined,
+            .regs = undefined,
             .cc_slot = undefined,
             .dispatch_slot = undefined,
+            .ctx_type = llvm.types.trapContext(context),
+            .ctx_slot = undefined,
+            .trap_symbols = trap_symbols,
+            .trap_fn_type = llvm.types.function(llvm.types.void_(context), &.{llvm.types.pointer(context)}),
             .blocks = blocks.ptr[0 .. line_count + 1],
             .dispatch_block = undefined,
-            .runtime_fns = undefined,
         };
 
         const main_fn = bindings.LLVMAddFunction(
@@ -124,15 +116,6 @@ pub const CodeGen = struct {
                 llvm.types.pointer(context),
             }),
         );
-
-        // declare the native runtime functions
-        inline for (0..runtime_names.len) |which| {
-            cg.runtime_fns[which] = bindings.LLVMAddFunction(
-                output.module.ref,
-                runtime_names[which],
-                runtimeType(context, @enumFromInt(which)),
-            );
-        }
 
         // declare lcc_set_args(argc, argv)
         const set_args_fn = bindings.LLVMAddFunction(
@@ -152,16 +135,14 @@ pub const CodeGen = struct {
         const argv = bindings.LLVMGetParam(main_fn, 1);
         _ = cg.builder.buildCall(set_args_fn, &.{ argc, argv }, "");
 
-        inline for (0..8) |code| {
-            var name_buffer: [8]u8 = undefined;
-            const name = std.fmt.bufPrintZ(&name_buffer, "r{d}", .{code}) catch unreachable;
-            cg.reg_slots[code] = bindings.LLVMBuildAlloca(cg.builder.ref, cg.word_type, name.ptr);
-        }
+        // one array for R0-R7 so the trap context can point at it
+        const regs_type = llvm.types.memoryArray(cg.word_type, 8);
+        cg.regs = cg.builder.buildAlloca(regs_type, "regs");
         cg.cc_slot = cg.builder.buildAlloca(cg.word_type, "cc");
         cg.dispatch_slot = cg.builder.buildAlloca(cg.word_type, "target");
-        // starts with all registers cleared
+        // starts with all registers and condition codes cleared
         const zero = llvm.value.constInt(cg.word_type, 0);
-        for (cg.reg_slots) |slot| _ = cg.builder.buildStore(zero, slot);
+        _ = cg.builder.buildStore(llvm.value.constNull(regs_type), cg.regs);
         _ = cg.builder.buildStore(zero, cg.cc_slot);
 
         const memory_type = llvm.types.memoryArray(cg.word_type, 65536);
@@ -171,6 +152,12 @@ pub const CodeGen = struct {
             "memory",
         );
         bindings.LLVMSetInitializer(cg.memory_global, llvm.value.constNull(memory_type));
+
+        // the trap context is shared by every handler; only pc changes
+        cg.ctx_slot = cg.builder.buildAlloca(cg.ctx_type, "trap_ctx");
+        _ = cg.builder.buildStore(cg.memory_global, cg.contextFieldAddress(0));
+        _ = cg.builder.buildStore(cg.regs, cg.contextFieldAddress(1));
+        _ = cg.builder.buildStore(cg.cc_slot, cg.contextFieldAddress(3));
 
         // store all encoded words into memory before execution starts
         for (air.lines.items, 0..) |line, i| {
@@ -255,24 +242,44 @@ pub const CodeGen = struct {
         );
     }
 
+    /// pointer to one register inside the regs array
+    fn regPointer(cg: *CodeGen, code: u3) bindings.ValueRef {
+        const index = llvm.value.constInt(cg.word_type, code);
+        return cg.builder.buildMemoryAddress(cg.regs, index);
+    }
+
     pub fn loadReg(cg: *CodeGen, code: u3) bindings.ValueRef {
-        return cg.builder.buildLoad(cg.word_type, cg.reg_slots[code], "v");
+        const pointer = cg.regPointer(code);
+        return cg.builder.buildLoad(cg.word_type, pointer, "v");
     }
 
     /// writes a register and sets the condition codes
     pub fn writeReg(cg: *CodeGen, code: u3, value: bindings.ValueRef) void {
-        _ = cg.builder.buildStore(value, cg.reg_slots[code]);
+        _ = cg.builder.buildStore(value, cg.regPointer(code));
         _ = cg.builder.buildStore(value, cg.cc_slot);
     }
 
     /// writes a register without touching the condition codes
     pub fn writeRegNoCc(cg: *CodeGen, code: u3, value: bindings.ValueRef) void {
-        _ = cg.builder.buildStore(value, cg.reg_slots[code]);
+        _ = cg.builder.buildStore(value, cg.regPointer(code));
     }
 
     /// loads the current condition-code value
     pub fn loadCc(cg: *CodeGen) bindings.ValueRef {
         return cg.builder.buildLoad(cg.word_type, cg.cc_slot, "cc");
+    }
+
+    /// pointer to one field of the shared trap context
+    pub fn contextFieldAddress(cg: *CodeGen, field: u32) bindings.ValueRef {
+        return cg.builder.buildFieldAddress(cg.ctx_type, cg.ctx_slot, field);
+    }
+
+    /// declaration of a trap handler: void(lcc_trap_ctx*), inserted once
+    pub fn trapFunction(cg: *CodeGen, symbol: [:0]const u8) bindings.ValueRef {
+        if (bindings.LLVMGetNamedFunction(cg.module.ref, symbol.ptr)) |existing| {
+            return existing;
+        }
+        return bindings.LLVMAddFunction(cg.module.ref, symbol.ptr, cg.trap_fn_type);
     }
 
     /// word pointer for an arbitrary runtime address
@@ -284,19 +291,6 @@ pub const CodeGen = struct {
     pub fn dispatchTo(cg: *CodeGen, target: bindings.ValueRef) void {
         _ = cg.builder.buildStore(target, cg.dispatch_slot);
         _ = cg.builder.buildBr(cg.dispatch_block);
-    }
-
-    /// emits a call to a native runtime function
-    pub fn callRuntime(
-        cg: *CodeGen,
-        which: RuntimeFn,
-        args: []const bindings.ValueRef,
-    ) bindings.ValueRef {
-        return cg.builder.buildCall(
-            cg.runtime_fns[@intFromEnum(which)],
-            args,
-            "",
-        );
     }
 
     /// validates a PC-relative target against the program bounds

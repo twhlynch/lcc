@@ -136,7 +136,7 @@ pub fn compileAndLink(
     dynamic: bool,
     lib_path: ?[]const u8,
 ) CompileError!void {
-    var output = try codegen.CodeGen.emit(&program.air, gpa);
+    var output = try codegen.CodeGen.emit(&program.air, gpa, &table.symbols);
     defer output.deinit();
 
     var machine = if (triple) |t| blk: {
