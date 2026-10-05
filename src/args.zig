@@ -5,17 +5,21 @@ pub const usage =
     \\Usage: lcc [options] <input.asm>
     \\
     \\Options:
-    \\  -o <file>         Output executable path
-    \\  -O<N>             Optimisation level: none, 0-3
-    \\  -target <triple>  LLVM target triple for code generation
-    \\  -arch <name>      Architecture component of the host triple
-    \\  -E, -emit-llvm    Print optimised LLVM IR
-    \\  -dynamic          Link against liblc3 dynamically
-    \\  -L<dir>           Directory to search for liblc3
-    \\  -generate-liblc3  Generate liblc3 shared library
-    \\  -traps <set>      Load trap sets (repeatable)
-    \\  -v, --version     Print version information
-    \\  -h, --help        Show this help
+    \\  -o <file>               Output executable path
+    \\  -O<N>                   Optimisation level: none, 0-3
+    \\  -target <triple>        LLVM target triple for code generation
+    \\  -arch <name>            Architecture component of the host triple
+    \\  -E, -emit-llvm          Print optimised LLVM IR
+    \\
+    \\  -dynamic                Link against liblc3 dynamically
+    \\  -L<dir>                 Directory to search for liblc3
+    \\  -generate-liblc3        Generate liblc3 shared library
+    \\
+    \\  -traps <set>            Load trap sets (repeatable)
+    \\  -generate-traps-header  Generate lcc_trap.h
+    \\
+    \\  -v, --version           Print version information
+    \\  -h, --help              Show this help
     \\
 ;
 
@@ -50,6 +54,7 @@ pub const Options = struct {
 pub const Result = union(enum) {
     help,
     version,
+    generate_traps_header,
     generate_liblc3: GenerateLiblc3,
     run: Options,
 };
@@ -92,6 +97,9 @@ const template = .{
     },
     .generate_liblc3 = zilc.Flag{
         .long = "generate-liblc3",
+    },
+    .generate_traps_header = zilc.Flag{
+        .long = "generate-traps-header",
     },
 };
 
@@ -233,6 +241,14 @@ pub fn parse(gpa: std.mem.Allocator, arena: std.mem.Allocator, args: []const []c
 
     var options: zilc.Options(template) = try .parse(gpa, arena, scan.rest.items, parse_config);
     defer options.deinit(arena);
+
+    if (options.flags.generate_traps_header) {
+        if (scan.specs.items.len > 0) {
+            std.log.err("cannot combine -traps with -generate-traps-header", .{});
+            return error.Usage;
+        }
+        return .generate_traps_header;
+    }
 
     if (options.flags.generate_liblc3) {
         if (scan.specs.items.len > 0) {
@@ -390,6 +406,10 @@ test parse {
     try std.testing.expectError(error.Usage, testParse(&.{ "-traps", "-o", "f" }));
     try std.testing.expectError(error.Usage, testParse(&.{ "-traps", "", "f" }));
 
-    // -traps with -generate-liblc3 is rejected
+    // -generate-traps-header needs no input file
+    try expectEqual(.generate_traps_header, try testParse(&.{"-generate-traps-header"}));
+
+    // -traps with the generated outputs is rejected
     try std.testing.expectError(error.Usage, testParse(&.{ "-traps", "x", "-generate-liblc3" }));
+    try std.testing.expectError(error.Usage, testParse(&.{ "-traps", "x", "-generate-traps-header" }));
 }

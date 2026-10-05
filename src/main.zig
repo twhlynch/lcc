@@ -4,6 +4,7 @@ const std = @import("std");
 
 const compiler = @import("compiler.zig");
 const elk = compiler.elk;
+const trapsets = compiler.trapsets;
 const args = @import("args.zig");
 const zilc = @import("zilc");
 
@@ -89,6 +90,16 @@ pub fn main(init: std.process.Init) !u8 {
     const options = switch (parsed) {
         .help => return 0,
         .version => return 0,
+        .generate_traps_header => {
+            compiler.writeFile(io, trapsets.trap_header_name, trapsets.trap_header) catch |err| {
+                std.log.err("failed to write {s}: {s}", .{ trapsets.trap_header_name, @errorName(err) });
+                out.flush() catch {};
+                return 1;
+            };
+            try out.print("generated {s}\n", .{trapsets.trap_header_name});
+            try out.flush();
+            return 0;
+        },
         .generate_liblc3 => |gl| {
             const triple = compiler.resolveTriple(gpa, gl.target, gl.arch) catch |err| {
                 return err;
