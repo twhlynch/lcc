@@ -105,6 +105,21 @@ pub const Builder = struct {
         return bindings.LLVMBuildGEP2(builder.ref, i16ty, base, &indices, 1, "ptr");
     }
 
+    /// gep to one field of a struct pointer
+    pub fn buildFieldAddress(
+        builder: Builder,
+        struct_type: bindings.TypeRef,
+        base: bindings.ValueRef,
+        field: u32,
+    ) bindings.ValueRef {
+        const i32ty = @import("type.zig").int32(builder.context);
+        var indices = [2]bindings.ValueRef{
+            bindings.LLVMConstInt(i32ty, 0, 0),
+            bindings.LLVMConstInt(i32ty, field, 0),
+        };
+        return bindings.LLVMBuildGEP2(builder.ref, struct_type, base, &indices, 2, "field");
+    }
+
     pub fn buildAdd(builder: Builder, lhs: bindings.ValueRef, rhs: bindings.ValueRef, name: []const u8) bindings.ValueRef {
         var buffer: [32]u8 = undefined;
         return bindings.LLVMBuildAdd(builder.ref, lhs, rhs, nameZ(&buffer, name));

@@ -81,10 +81,12 @@ pub extern fn LLVMInt32TypeInContext(C: ContextRef) TypeRef;
 pub extern fn LLVMVoidTypeInContext(C: ContextRef) TypeRef;
 pub extern fn LLVMPointerTypeInContext(C: ContextRef, AddressSpace: c_uint) TypeRef;
 pub extern fn LLVMArrayType2(ElementType: TypeRef, ElementCount: c_ulonglong) TypeRef;
+pub extern fn LLVMStructTypeInContext(C: ContextRef, ElementTypes: [*]const TypeRef, ElementCount: c_uint, Packed: LLVMBool) TypeRef;
 pub extern fn LLVMFunctionType(ReturnType: TypeRef, ParamTypes: ?[*]const TypeRef, ParamCount: c_uint, IsVarArg: LLVMBool) TypeRef;
 
 // values
 pub extern fn LLVMAddFunction(M: ModuleRef, Name: [*:0]const u8, FunctionTy: TypeRef) ValueRef;
+pub extern fn LLVMGetNamedFunction(M: ModuleRef, Name: [*:0]const u8) ?ValueRef;
 pub extern fn LLVMGlobalGetValueType(Global: ValueRef) TypeRef;
 pub extern fn LLVMAddGlobal(M: ModuleRef, Ty: TypeRef, Name: [*:0]const u8) ValueRef;
 pub extern fn LLVMSetInitializer(GlobalVar: ValueRef, ConstantVal: ValueRef) void;
