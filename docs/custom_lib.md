@@ -1,8 +1,12 @@
 # Building a custom Trap library
 
 When you compile with `-dynamic`, the generated binary calls into `liblc3` at
-runtime for trap instructions. Each trap is a separate C function, so you can
-override traps by providing your own implementation in a custom library.
+runtime for trap instructions. Each trap is a separate C function using the
+`lcc_trap_ctx` ABI (see `lcc -generate-traps-header`), so you can override traps
+by providing your own implementation in a custom library.
+
+For per-build overrides and extensions, prefer `-traps`
+(see [trap_sets.md](trap_sets.md)).
 
 ## Example
 
@@ -17,14 +21,14 @@ cp src/runtime/lc3_runtime.c liblc3_custom.c
 Edit `liblc3_custom.c` and change `lc3_putn`:
 
 ```c
-void lc3_putn(unsigned short word)
+void lc3_putn(lcc_trap_ctx *ctx)
 {
     if (!at_newline)
     {
         (void)putchar('\n');
         at_newline = 1;
     }
-    (void)printf("0x%04X\n", (unsigned int)word);
+    (void)printf("0x%04X\n", (unsigned int)ctx->reg[0]);
     //            ^^^^^^ This part changed!
     (void)fflush(stdout);
 }
