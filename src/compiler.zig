@@ -6,6 +6,7 @@ pub const elk = @import("elk.zig");
 pub const codegen = @import("codegen/codegen.zig");
 pub const linker = @import("linker.zig");
 pub const llvm = @import("llvmc/root.zig");
+pub const trapsets = @import("trapsets.zig");
 
 pub const Error = error{
     AssemblyFailed,
