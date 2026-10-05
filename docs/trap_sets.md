@@ -70,9 +70,10 @@ LCC_LINK(-L/usr/local/lib, -lmcpp)
 One flag per comma-separated argument. The macro expands to nothing; lcc
 finds it by scanning, like `LCC_TRAP`.
 
-lcc invokes `clang` (not `clang++`), so it appends `-lc++` automatically
-whenever a loaded set is C++ (`.cpp`, `.cc`, `.cxx`). If your `LCC_LINK` already
-has `-lc++` or `-lstdc++`, lcc leaves the flags alone.
+lcc invokes `clang` (not `clang++`), so it appends the platform C++ runtime
+whenever a loaded set is C++ (`.cpp`, `.cc`, `.cxx`): `-lc++` on macOS,
+`-lstdc++` on Linux. If your `LCC_LINK` already names a runtime, lcc leaves
+the flags alone.
 
 ## Compiled trap sets
 

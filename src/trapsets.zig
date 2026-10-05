@@ -163,13 +163,14 @@ pub fn load(gpa: std.mem.Allocator, io: std.Io, specs: []const []const u8) LoadE
     }
 
     // lcc invokes clang, not clang++; the driver links the C++ runtime only
-    // when asked, so any C++ set gets -lc++ unless the set declared one
+    // when asked, so any C++ set gets the platform runtime (libc++ on macOS,
+    // libstdc++ elsewhere) unless the set declared one
     var needs_cxx = false;
     for (table.sets.items) |set| {
         if (isCxxExt(set.ext)) needs_cxx = true;
     }
     if (needs_cxx and !declaredCxxRuntime(table.link_flags.items)) {
-        try table.link_flags.append(gpa, "-lc++");
+        try table.link_flags.append(gpa, cxxRuntimeFlag());
     }
 
     return table;
@@ -242,6 +243,11 @@ fn isCxxExt(ext: []const u8) bool {
         if (std.mem.eql(u8, ext, candidate)) return true;
     }
     return false;
+}
+
+/// the C++ runtime clang links by default on this platform
+pub fn cxxRuntimeFlag() []const u8 {
+    return if (@import("builtin").os.tag.isDarwin()) "-lc++" else "-lstdc++";
 }
 
 /// true when LCC_LINK already names a C++ runtime
