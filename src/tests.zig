@@ -764,31 +764,36 @@ test "C++ runtime flag is added once" {
     defer arena.deinit();
     const alloc = arena.allocator();
 
-    // minecraft is C++ but does not declare -lc++
-    var mc = try trapsets.load(alloc, io, &.{"src/runtime/sets/minecraft.cpp"});
-    defer mc.deinit(alloc);
-    try std.testing.expectEqual(@as(usize, 1), countFlag(mc.link_flags.items, "-lc++"));
+    const cxx = trapsets.cxxRuntimeFlag();
+    const other: []const u8 = if (std.mem.eql(u8, cxx, "-lc++")) "-lstdc++" else "-lc++";
 
-    // a C++ set that declares the flag itself is not doubled
-    try writeFixture(io, test_dir ++ "/declcpp.cpp", "LCC_LINK(-lc++)\nLCC_TRAP(0x30, cxxflag) {}\n");
+    // time.cpp is C++ but does not declare a runtime
+    var ts = try trapsets.load(alloc, io, &.{"src/runtime/sets/time.cpp"});
+    defer ts.deinit(alloc);
+    try std.testing.expectEqual(@as(usize, 1), countFlag(ts.link_flags.items, cxx));
+
+    // a C++ set that declares the platform runtime itself is not doubled
+    const declared_src = try std.fmt.allocPrint(alloc, "LCC_LINK({s})\nLCC_TRAP(0x30, cxxflag) {{}}\n", .{cxx});
+    try writeFixture(io, test_dir ++ "/declcpp.cpp", declared_src);
     defer cleanup(io, .{ .files = &.{test_dir ++ "/declcpp.cpp"} });
     var dup = try trapsets.load(alloc, io, &.{test_dir ++ "/declcpp.cpp"});
     defer dup.deinit(alloc);
-    try std.testing.expectEqual(@as(usize, 1), countFlag(dup.link_flags.items, "-lc++"));
+    try std.testing.expectEqual(@as(usize, 1), countFlag(dup.link_flags.items, cxx));
 
     // an alternative runtime in LCC_LINK suppresses the default
-    try writeFixture(io, test_dir ++ "/stdcpp.cpp", "LCC_LINK(-lstdc++)\nLCC_TRAP(0x30, cxxalt) {}\n");
+    const alt_src = try std.fmt.allocPrint(alloc, "LCC_LINK({s})\nLCC_TRAP(0x30, cxxalt) {{}}\n", .{other});
+    try writeFixture(io, test_dir ++ "/stdcpp.cpp", alt_src);
     defer cleanup(io, .{ .files = &.{test_dir ++ "/stdcpp.cpp"} });
     var alt = try trapsets.load(alloc, io, &.{test_dir ++ "/stdcpp.cpp"});
     defer alt.deinit(alloc);
-    try std.testing.expectEqual(@as(usize, 0), countFlag(alt.link_flags.items, "-lc++"));
+    try std.testing.expectEqual(@as(usize, 0), countFlag(alt.link_flags.items, cxx));
 
     // plain C sets stay clean
     try writeFixture(io, test_dir ++ "/plain.c", "LCC_TRAP(0x30, plainflag) {}\n");
     defer cleanup(io, .{ .files = &.{test_dir ++ "/plain.c"} });
     var c = try trapsets.load(alloc, io, &.{test_dir ++ "/plain.c"});
     defer c.deinit(alloc);
-    try std.testing.expectEqual(@as(usize, 0), countFlag(c.link_flags.items, "-lc++"));
+    try std.testing.expectEqual(@as(usize, 0), countFlag(c.link_flags.items, cxx));
 }
 
 test "generate traps header writes the ABI" {
