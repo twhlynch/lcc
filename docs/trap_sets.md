@@ -74,6 +74,66 @@ lcc invokes `clang` (not `clang++`), so it appends `-lc++` automatically
 whenever a loaded set is C++ (`.cpp`, `.cc`, `.cxx`). If your `LCC_LINK` already
 has `-lc++` or `-lstdc++`, lcc leaves the flags alone.
 
+## Compiled trap sets
+
+Handlers do not have to be written in C. All that matters is the ABI: an
+unmangled `lcc_trap_<alias>` symbol taking `lcc_trap_ctx *`, with the layout
+described in [The trap ABI](#the-trap-abi). Rust `staticlib`, Go `c-archive`,
+a Zig static library, anything that produces a static archive or object file.
+
+lcc still needs the vector and alias declarations to assemble the program, so a
+compiled set ships with a stub C declaration. `LCC_TRAP` lines written as
+prototypes with no body, and an `LCC_LINK` naming the library.
+
+```c
+/* mytraps.c declarations only */
+LCC_TRAP(0x30, foo);
+LCC_LINK(./libtraps.a)
+```
+
+```sh
+lcc program.asm -traps mytraps.c
+```
+
+The stub compiles to an empty object while `LCC_LINK` passes the archive to the
+linker, which pulls in your handlers. Everything else works as usual: the stub
+participates in the collision and override rules exactly like a C set.
+
+Example in Rust:
+
+```rust
+#[repr(C)]
+pub struct LccTrapCtx {
+    pub memory: *mut u16,
+    pub reg: *mut u16,
+    pub pc: u16,
+    pub cc: *mut u16,
+}
+
+#[no_mangle]
+pub extern "C" fn lcc_trap_foo(ctx: *mut LccTrapCtx) {
+    unsafe {
+        (*ctx).reg.write(42);
+    }
+}
+```
+
+```sh
+rustc --crate-type staticlib traps.rs -o libtraps.a
+lcc program.asm -traps mytraps.c
+```
+
+- Export handlers with C linkage (`extern "C"`, `#[no_mangle]`,
+  `-buildmode=c-archive`), and keep the struct layout identical to `lcc_trap.h`.
+- Static archives and objects link straight into the executable. Shared
+  libraries link too, but the loader resolves a relative path against the
+  working directory, so the program only runs from the directory holding the
+  library. Build the library with an `@rpath` install name and link with
+  `-dynamic` to avoid that. lcc adds the directory it ran from to the runtime
+  search path.
+- `LCC_LINK` paths resolve relative to the directory lcc runs from, like the
+  `-traps` paths themselves.
+
 ## Overriding standard traps
 
 A set may replace a standard trap by redeclaring it with the **same alias**:

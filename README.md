@@ -39,21 +39,21 @@ standard. See [docs/behaviour.md](docs/behaviour.md).
 
 ### Flags
 
-| Flag                     | Description                                  |
-| ------------------------ | -------------------------------------------- |
-| `-o <file>`              | Output executable path                       |
-| `-Onone`                 | Skip the LLVM optimization pass              |
-| `-O0` .. `-O3`           | LLVM optimization levels                     |
-| `-E`, `-emit-llvm`       | Print the optimized LLVM IR to stdout        |
-| `-target <triple>`       | Cross-compile for a target triple            |
-| `-arch <name>`           | Shorthand for `-target` using the host OS    |
-| `-dynamic`               | Link against liblc3 dynamically              |
-| `-L<dir>`                | Directory to search for liblc3               |
-| `-generate-liblc3`       | Generate liblc3 shared library               |
-| `-traps <set>`           | Load trap sets (repeatable)                  |
-| `-generate-traps-header` | Generate lcc_trap.h                          |
-| `-v`, `--version`        | Print version information                    |
-| `-h`, `--help`           | Print usage help                             |
+| Flag                     | Description                               |
+| ------------------------ | ----------------------------------------- |
+| `-o <file>`              | Output executable path                    |
+| `-Onone`                 | Skip the LLVM optimization pass           |
+| `-O0` .. `-O3`           | LLVM optimization levels                  |
+| `-E`, `-emit-llvm`       | Print the optimized LLVM IR to stdout     |
+| `-target <triple>`       | Cross-compile for a target triple         |
+| `-arch <name>`           | Shorthand for `-target` using the host OS |
+| `-dynamic`               | Link against liblc3 dynamically           |
+| `-L<dir>`                | Directory to search for liblc3            |
+| `-generate-liblc3`       | Generate liblc3 shared library            |
+| `-traps <set>`           | Load trap sets (repeatable)               |
+| `-generate-traps-header` | Generate lcc_trap.h                       |
+| `-v`, `--version`        | Print version information                 |
+| `-h`, `--help`           | Print usage help                          |
 
 Cross-compilation reuses the host OS suffix when only an architecture is
 given (`-arch x86_64` on macOS produces a Rosetta binary). LLVM backends are
@@ -110,7 +110,8 @@ Trap semantics follow ELK's emulator. `putn` and `reg` are debug extensions.
 ### Trap sets
 
 Extra trap extensions or 'sets' can be loaded with `-traps`, as paths to C/C++
-source files:
+source files. Implementations can also be prebuilt static libraries in any
+language, paired with a small declarations stub:
 
 ```sh
 lcc program.asm -traps ./src/runtime/sets/minecraft.cpp
