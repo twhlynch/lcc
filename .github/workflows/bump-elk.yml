@@ -1,0 +1,72 @@
+name: Bump elk
+
+on:
+  schedule:
+    - cron: "0 0 1 * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  bump:
+    name: Check for elk release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: mlugg/setup-zig@v2
+        with:
+          version: 0.16.0
+
+      - name: Get latest elk release
+        id: latest
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # get latest tag
+          TAG=$(gh api repos/dxrcy/elk/releases -q '.[] | select(.draft == false and .prerelease == false) | .tag_name | select(test("^v[0-9]+\\.[0-9]+\\.[0-9]+$"))' | sort -V | tail -n1)
+          [ -z "$TAG" ] && exit 1
+
+          # get commit sha
+          SHA=$(gh api "repos/dxrcy/elk/commits/$TAG" -q '.sha')
+          [ -z "$SHA" ] && exit 1
+
+          # get current
+          CURRENT=$(grep -o 'codeberg.org/dxrcy/elk#[^"]+' build.zig.zon | cut -d'#' -f2)
+
+          # is it different
+          if [ "$SHA" != "$CURRENT" ] && [ "$TAG" != "$CURRENT" ]; then
+            echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+            echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Bump elk dependency
+        if: steps.latest.outputs.tag != ''
+        env:
+          TAG: ${{ steps.latest.outputs.tag }}
+        run: zig fetch --save=elk "git+https://codeberg.org/dxrcy/elk#$TAG"
+
+      - name: Create pull request
+        if: steps.latest.outputs.tag != ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.latest.outputs.tag }}
+          SHA: ${{ steps.latest.outputs.sha }}
+        run: |
+          BRANCH="chore/bump-elk-$TAG"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git checkout -b "$BRANCH"
+          git add build.zig.zon
+          git commit -m "chore: bump elk to $TAG"
+          git push --set-upstream origin "$BRANCH"
+
+          gh pr create \
+            --base "${{ github.event.repository.default_branch }}" \
+            --head "$BRANCH" \
+            --title "chore: bump elk to $TAG" \
+            --body "Automated \`elk\` update to [$TAG](https://github.com/dxrcy/elk/releases/tag/$TAG) (\`$SHA\`)."
