@@ -68,7 +68,10 @@ LCC_LINK(-L/usr/local/lib, -lmcpp)
 ```
 
 One flag per comma-separated argument. The macro expands to nothing; lcc
-finds it by scanning, like `LCC_TRAP`.
+finds it by scanning, like `LCC_TRAP`. Bare file paths and relative `-L`
+values resolve against the set file's own directory, so a stub can name an
+object that sits beside it no matter where lcc runs from. Other flags pass
+through untouched.
 
 lcc invokes `clang` (not `clang++`), so it appends the platform C++ runtime
 whenever a loaded set is C++ (`.cpp`, `.cc`, `.cxx`): `-lc++` on macOS,
@@ -132,8 +135,6 @@ lcc program.asm -traps mytraps.c
   library. Build the library with an `@rpath` install name and link with
   `-dynamic` to avoid that. lcc adds the directory it ran from to the runtime
   search path.
-- `LCC_LINK` paths resolve relative to the directory lcc runs from, like the
-  `-traps` paths themselves.
 
 ## Overriding standard traps
 

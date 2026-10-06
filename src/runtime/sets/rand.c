@@ -13,5 +13,5 @@ LCC_TRAP(0x40, seed);
 LCC_TRAP(0x41, rand);
 
 // clang-format off
-LCC_LINK(src/runtime/sets/rand.o)
+LCC_LINK(rand.o)
 // clang-format on

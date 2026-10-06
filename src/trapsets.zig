@@ -33,6 +33,7 @@ pub const Set = struct {
         for (set.symbols.items) |symbol| gpa.free(symbol);
         set.symbols.deinit(gpa);
         set.decls.deinit(gpa);
+        for (set.link_flags.items) |flag| gpa.free(flag);
         set.link_flags.deinit(gpa);
         gpa.free(set.source);
     }
@@ -367,6 +368,7 @@ fn addLinkFlags(
         std.log.err("{s}:{d}: LCC_LINK expects at least one flag", .{ set.path, macro_line });
         return error.InvalidTrapSet;
     }
+    const dir = std.fs.path.dirname(set.path);
     for (args) |arg| {
         var flag = std.mem.trim(u8, arg, " \t\r\n");
         if (flag.len >= 2 and (flag[0] == '"' or flag[0] == '\'') and flag[flag.len - 1] == flag[0]) {
@@ -376,8 +378,38 @@ fn addLinkFlags(
             std.log.err("{s}:{d}: empty flag in LCC_LINK", .{ set.path, macro_line });
             return error.InvalidTrapSet;
         }
-        try set.link_flags.append(gpa, flag);
+        const resolved = try resolveLinkPath(gpa, dir, flag);
+        set.link_flags.append(gpa, resolved) catch |err| {
+            gpa.free(resolved);
+            return err;
+        };
     }
+}
+
+/// resolves a LCC_LINK argument against dir, the set file's own directory:
+/// bare paths and relative -L values are joined to it, flags and absolute
+/// paths pass through unchanged. dir is null for a set named without one.
+fn resolveLinkPath(gpa: std.mem.Allocator, dir: ?[]const u8, flag: []const u8) LoadError![]const u8 {
+    if (dir) |set_dir| {
+        if (std.mem.startsWith(u8, flag, "-L") and flag.len > "-L".len) {
+            const value = stripDotSlash(flag["-L".len..]);
+            if (value.len > 0 and !std.fs.path.isAbsolute(value)) {
+                const joined = try std.fs.path.join(gpa, &.{ set_dir, value });
+                defer gpa.free(joined);
+                return std.fmt.allocPrint(gpa, "-L{s}", .{joined});
+            }
+        } else if (!std.mem.startsWith(u8, flag, "-") and !std.fs.path.isAbsolute(flag)) {
+            const value = stripDotSlash(flag);
+            if (value.len > 0) return std.fs.path.join(gpa, &.{ set_dir, value });
+        }
+    }
+    return gpa.dupe(u8, flag);
+}
+
+fn stripDotSlash(path: []const u8) []const u8 {
+    var result = path;
+    while (std.mem.startsWith(u8, result, "./")) result = result["./".len..];
+    return result;
 }
 
 fn parseVector(text: []const u8) ?u8 {

@@ -723,6 +723,28 @@ test "C++ runtime flag is added once" {
     try std.testing.expectEqual(@as(usize, 0), countFlag(c.link_flags.items, cxx));
 }
 
+test "LCC_LINK paths resolve relative to the set file" {
+    try ensureTestDir(std.testing.io);
+    const io = std.testing.io;
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    try writeFixture(io, test_dir ++ "/linkpath.c",
+        \\LCC_TRAP(0x30, linky);
+        \\LCC_LINK(./deps/lib.a, -lmcpp, /opt/lib/abs.a)
+        \\
+    );
+    defer cleanup(io, .{ .files = &.{test_dir ++ "/linkpath.c"} });
+
+    var ts = try trapsets.load(alloc, io, &.{test_dir ++ "/linkpath.c"});
+    defer ts.deinit(alloc);
+    try std.testing.expectEqual(@as(usize, 3), ts.link_flags.items.len);
+    try std.testing.expectEqualStrings(test_dir ++ "/deps/lib.a", ts.link_flags.items[0]);
+    try std.testing.expectEqualStrings("-lmcpp", ts.link_flags.items[1]);
+    try std.testing.expectEqualStrings("/opt/lib/abs.a", ts.link_flags.items[2]);
+}
+
 test "generate traps header writes the ABI" {
     requireLcc(std.testing.io);
     const io = std.testing.io;
