@@ -658,6 +658,34 @@ test "seed and rand set runs" {
     }
 }
 
+test "syscall set runs" {
+    requireLcc(std.testing.io);
+    try ensureTestDir(std.testing.io);
+    const io = std.testing.io;
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    const note = test_dir ++ "/note.txt";
+
+    var out_buf: [128]u8 = undefined;
+    const out = try outPath(&out_buf, "syscalls_out");
+    const compile = try runLcc(alloc, io, &.{ lcc_exe, "-o", out, "-traps", "src/runtime/sets/syscalls.c", "examples/syscalls.asm" });
+    defer cleanup(io, .{ .files = &.{ out, note } });
+    try std.testing.expectEqual(@as(u8, 0), compile.code);
+
+    const run = try execWithStdin(alloc, io, &.{out}, "1\n");
+    try std.testing.expectEqual(@as(u8, 0), run.exit);
+    try std.testing.expectEqualStrings("3\nlcc\ncc\n", run.stdout);
+
+    // remove must have deleted the file
+    if (std.Io.Dir.cwd().access(io, note, .{})) {
+        return error.NoteLeftBehind;
+    } else |err| {
+        try std.testing.expect(err == error.FileNotFound);
+    }
+}
+
 test "C++ trap sets link the C++ runtime automatically" {
     requireLcc(std.testing.io);
     try ensureTestDir(std.testing.io);
