@@ -3,7 +3,7 @@
 //!   x40 seed R0 = seed for the generator
 //!   x41 rand R0 = next pseudo random 16 bits
 //!
-//! zig build-obj -OReleaseFast src/runtime/sets/rand.zig -femit-bin librand.o
+//! zig build-obj -OReleaseFast src/runtime/sets/rand.zig -femit-bin=src/runtime/sets/rand.o
 
 const std = @import("std");
 

@@ -654,7 +654,7 @@ test "seed and rand set runs" {
     const alloc = arena.allocator();
 
     // build the zig implementation into an object lcc can link
-    const obj = test_dir ++ "/rand.o";
+    const obj = "src/runtime/sets/rand.o";
     const build = try std.process.run(alloc, io, .{ .argv = &.{
         "zig",
         "build-obj",
@@ -675,13 +675,6 @@ test "seed and rand set runs" {
         },
     }
 
-    // declarations stub pointing at the object we just built
-    try writeFixture(io, test_dir ++ "/randstub.c",
-        \\LCC_TRAP(0x40, seed);
-        \\LCC_TRAP(0x41, rand);
-        \\LCC_LINK(.lcc-test/rand.o)
-        \\
-    );
     try writeFixture(io, test_dir ++ "/rand.asm",
         \\.ORIG x3000
         \\
@@ -705,11 +698,11 @@ test "seed and rand set runs" {
         \\.END
         \\
     );
-    defer cleanup(io, .{ .files = &.{ test_dir ++ "/randstub.c", test_dir ++ "/rand.asm", obj, test_dir ++ "/rand_out" } });
+    defer cleanup(io, .{ .files = &.{ test_dir ++ "/rand.asm", obj, test_dir ++ "/rand_out" } });
 
     var out_buf: [128]u8 = undefined;
     const out = try outPath(&out_buf, "rand_out");
-    const compile = try runLcc(alloc, io, &.{ lcc_exe, "-o", out, "-traps", test_dir ++ "/randstub.c", test_dir ++ "/rand.asm" });
+    const compile = try runLcc(alloc, io, &.{ lcc_exe, "-o", out, "-traps", "src/runtime/sets/rand.c", test_dir ++ "/rand.asm" });
     try std.testing.expectEqual(@as(u8, 0), compile.code);
 
     const run = try execWithStdin(alloc, io, &.{out}, "1\n");
