@@ -8,7 +8,7 @@ const CodeGen = codegen.CodeGen;
 /// lowers one trap; falls through to the next word afterwards
 pub fn lower(cg: *CodeGen, vect: u8, index: usize) void {
     const symbol = cg.trap_symbols[vect] orelse {
-        std.log.warn("trap vector x{X:0>2} at x{X} has no registered handler, treated as nop", .{ vect, cg.air.origin + index });
+        std.log.warn("trap vector x{X:0>2} at x{X} has no registered handler, treated as nop", .{ vect, cg.addressOf(index) });
         return;
     };
 

@@ -343,6 +343,105 @@ test "usage errors are reported" {
     }
 }
 
+test "multiple input files compile into one program" {
+    requireLcc(std.testing.io);
+    try ensureTestDir(std.testing.io);
+    const io = std.testing.io;
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var out_buf: [128]u8 = undefined;
+    const out = try outPath(&out_buf, "multifile");
+    const compile = try runLcc(alloc, io, &.{
+        lcc_exe,
+        "-o",
+        out,
+        "examples/multifile.asm",
+        "examples/multifile_extra.asm",
+    });
+    defer cleanup(io, .{ .files = &.{out} });
+    try std.testing.expectEqual(@as(u8, 0), compile.code);
+    try std.testing.expect(std.mem.indexOf(u8, compile.stdout, "from 2 files") != null);
+
+    // the extra file's subroutine runs and its data word is read back
+    const run = try execWithStdin(alloc, io, &.{out}, "1\n");
+    try std.testing.expectEqual(@as(u8, 0), run.exit);
+    try std.testing.expectEqualStrings("Hello from an extra file\n42\n", run.stdout);
+}
+
+test "overlapping input files are rejected" {
+    requireLcc(std.testing.io);
+    try ensureTestDir(std.testing.io);
+    const io = std.testing.io;
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    const first = test_dir ++ "/ovl_first.asm";
+    const second = test_dir ++ "/ovl_second.asm";
+    try writeFixture(io, first, ".ORIG x3000\nhalt\n.END\n");
+    try writeFixture(io, second, ".ORIG x3000\nhalt\n.END\n");
+
+    var out_buf: [128]u8 = undefined;
+    const out = try outPath(&out_buf, "overlap");
+    const result = try runLcc(alloc, io, &.{ lcc_exe, "-o", out, first, second });
+    defer cleanup(io, .{ .files = &.{ first, second, out } });
+
+    try std.testing.expect(result.code != 0);
+    try std.testing.expect(std.mem.indexOf(u8, result.stderr, "already loaded") != null);
+}
+
+test "fall-through follows origin order, not argument order" {
+    requireLcc(std.testing.io);
+    try ensureTestDir(std.testing.io);
+    const io = std.testing.io;
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    const main_src = test_dir ++ "/origin_main.asm";
+    const high = test_dir ++ "/origin_high.asm";
+    const low = test_dir ++ "/origin_low.asm";
+    try writeFixture(io, main_src,
+        \\.ORIG x3000
+        \\    lea r0, Msg
+        \\    puts
+        \\Msg .STRINGZ "A"
+        \\.END
+        \\
+    );
+    try writeFixture(io, high,
+        \\.ORIG x5000
+        \\    lea r0, Msg
+        \\    puts
+        \\    and r0, r0, #0
+        \\Msg .STRINGZ "B"
+        \\.END
+        \\
+    );
+    try writeFixture(io, low,
+        \\.ORIG x4000
+        \\    lea r0, Msg
+        \\    puts
+        \\Msg .STRINGZ "C"
+        \\.END
+        \\
+    );
+
+    var out_buf: [128]u8 = undefined;
+    const out = try outPath(&out_buf, "origin_order");
+    const compile = try runLcc(alloc, io, &.{ lcc_exe, "-o", out, main_src, high, low });
+    defer cleanup(io, .{ .files = &.{ main_src, high, low, out } });
+    try std.testing.expectEqual(@as(u8, 0), compile.code);
+
+    // x3000 falls through to x4000 then x5000 regardless of argument
+    // order, so the letters arrive as A, C, B
+    const run = try execWithStdin(alloc, io, &.{out}, "");
+    try std.testing.expectEqual(@as(u8, 0), run.exit);
+    try std.testing.expectEqualStrings("ACB\n", run.stdout);
+}
+
 test "dynamic linking produces identical output" {
     requireLcc(std.testing.io);
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);

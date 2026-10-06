@@ -113,7 +113,7 @@ pub fn lower(cg: *CodeGen, instruction: elk.Instruction, index: usize) codegen.E
         },
 
         .rti => {
-            std.log.warn("rti instruction at x{X} treated as nop", .{cg.air.origin + index});
+            std.log.warn("rti instruction at x{X} treated as nop", .{cg.addressOf(index)});
             return false;
         },
 
@@ -200,7 +200,7 @@ fn resolvedTarget(
     return switch (operand.value) {
         .resolved => |formed| cg.branchTargetIndex(index, formed.integer),
         .unresolved => blk: {
-            std.log.err("unresolved label reference at x{X}", .{@as(u64, @intCast(cg.air.origin + index))});
+            std.log.err("unresolved label reference at x{X}", .{@as(u64, cg.addressOf(index))});
             break :blk error.InvalidTarget;
         },
     };
@@ -219,6 +219,6 @@ fn resolvedAddress(
 fn absoluteAddress(cg: *CodeGen, target_index: usize) llvm.bindings.ValueRef {
     return llvm.value.constInt(
         cg.word_type,
-        @as(i64, cg.air.origin) + @as(i64, @intCast(target_index)),
+        @intCast(cg.addressOf(target_index)),
     );
 }

@@ -37,15 +37,13 @@ fn compile(
     table: *const trapsets.Table,
     diags: *Diagnostics,
 ) (error{CompileFailed} || compiler.Error)!compiler.Program {
-    return compiler.assembleFile(io, gpa, options.input, &table.traps, &diags.reporter) catch |err| switch (err) {
+    return compiler.assembleFiles(io, gpa, options.inputs, &table.traps, &diags.reporter) catch |err| switch (err) {
         error.AssemblyFailed => {
             diags.summarize();
             return error.CompileFailed;
         },
-        error.FileNotFound => {
-            std.log.err("file not found: {s}", .{options.input});
-            return error.CompileFailed;
-        },
+        // the missing path is already logged by assembleFiles
+        error.FileNotFound => return error.CompileFailed,
         else => |other| {
             return other;
         },
@@ -56,14 +54,26 @@ fn printSummary(
     out: *std.Io.Writer,
     program: *const compiler.Program,
 ) std.Io.Writer.Error!void {
-    try out.print(
-        "Assembled {} words at origin x{X:04} ({} labels)\n",
-        .{
-            program.air.lines.items.len,
-            program.air.origin,
-            program.air.labels.items.len,
-        },
-    );
+    if (program.segments.len == 1) {
+        try out.print(
+            "Assembled {} words at origin x{X:04} ({} labels)\n",
+            .{
+                program.totalWords(),
+                program.mainOrigin(),
+                program.totalLabels(),
+            },
+        );
+    } else {
+        try out.print(
+            "Assembled {} words from {} files at origin x{X:04} ({} labels)\n",
+            .{
+                program.totalWords(),
+                program.segments.len,
+                program.mainOrigin(),
+                program.totalLabels(),
+            },
+        );
+    }
 }
 
 pub fn main(init: std.process.Init) !u8 {
@@ -184,7 +194,7 @@ pub fn main(init: std.process.Init) !u8 {
         &program,
         &table,
         init.environ_map,
-        options.output orelse defaultOutput(options.input),
+        options.output orelse defaultOutput(options.inputs[0]),
         compiler.optimizeLevel(options.optimize),
         options.emit_llvm,
         triple,

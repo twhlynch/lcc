@@ -12,30 +12,102 @@ pub const Error = error{
     AssemblyFailed,
 } || std.Io.Dir.RealPathFileError || std.Io.Dir.ReadFileAllocError;
 
-/// program elk ir and source
-pub const Program = struct {
+/// one assembled input file; segments[0] is the main program and any
+/// further segments are extras loaded at their own origins
+pub const Segment = struct {
     air: elk.Air,
     source: elk.Source,
-    text: []const u8,
 
-    pub fn deinit(program: *Program, gpa: std.mem.Allocator) void {
-        program.air.deinit(gpa);
-        gpa.free(program.text);
-        if (program.source.path) |path| {
+    pub fn deinit(seg: *Segment, gpa: std.mem.Allocator) void {
+        seg.air.deinit(gpa);
+        // source.text and the file buffer are the same allocation
+        gpa.free(seg.source.text);
+        if (seg.source.path) |path| {
             gpa.free(path);
         }
     }
 };
 
-/// read an assembly file, parse it with elk
+/// program of one or more elk segments
+pub const Program = struct {
+    segments: []Segment,
+
+    pub fn deinit(program: *Program, gpa: std.mem.Allocator) void {
+        for (program.segments) |*seg| seg.deinit(gpa);
+        gpa.free(program.segments);
+    }
+
+    pub fn mainPath(program: *const Program) ?[]const u8 {
+        if (program.segments.len == 0) return null;
+        return program.segments[0].source.path;
+    }
+
+    pub fn totalWords(program: *const Program) usize {
+        var total: usize = 0;
+        for (program.segments) |*seg| total += seg.air.lines.items.len;
+        return total;
+    }
+
+    pub fn totalLabels(program: *const Program) usize {
+        var total: usize = 0;
+        for (program.segments) |*seg| total += seg.air.labels.items.len;
+        return total;
+    }
+
+    pub fn mainOrigin(program: *const Program) u16 {
+        if (program.segments.len == 0) return 0;
+        return program.segments[0].air.origin;
+    }
+};
+
+/// read assembly files in order, parse each with elk and merge them into
+/// one image; labels resolve per file, so each file keeps its own origin
 /// diagnostics are reported through the provided reporter
-pub fn assembleFile(
+pub fn assembleFiles(
+    io: std.Io,
+    gpa: std.mem.Allocator,
+    paths: []const []const u8,
+    traps: *const elk.Traps,
+    reporter: *elk.reporting.Primary,
+) Error!Program {
+    if (paths.len == 0) {
+        std.log.err("no input files", .{});
+        return error.FileNotFound;
+    }
+
+    var segments: std.ArrayList(Segment) = .empty;
+    errdefer {
+        for (segments.items) |*seg| seg.deinit(gpa);
+        segments.deinit(gpa);
+    }
+
+    // each input claims its address range as it is assembled so a
+    // collision fails before later files are even read
+    var used = std.StaticBitSet(65536).initEmpty();
+    for (paths) |path| {
+        var seg = assembleOne(io, gpa, path, traps, reporter) catch |err| switch (err) {
+            error.FileNotFound => {
+                std.log.err("file not found: {s}", .{path});
+                return error.FileNotFound;
+            },
+            else => |other| return other,
+        };
+        errdefer seg.deinit(gpa);
+        try claim(&used, segments.items, seg);
+        try segments.append(gpa, seg);
+    }
+
+    return .{ .segments = try segments.toOwnedSlice(gpa) };
+}
+
+/// read a single assembly file, parse it with elk
+fn assembleOne(
     io: std.Io,
     gpa: std.mem.Allocator,
     path: []const u8,
     traps: *const elk.Traps,
     reporter: *elk.reporting.Primary,
-) Error!Program {
+) Error!Segment {
     var path_buffer: [std.fs.max_path_bytes]u8 = undefined;
     const length = try std.Io.Dir.cwd().realPathFile(io, path, &path_buffer);
     const resolved_path = path_buffer[0..length];
@@ -64,7 +136,48 @@ pub fn assembleFile(
     );
     errdefer air.deinit(gpa);
 
-    return .{ .air = air, .source = source, .text = text };
+    return .{ .air = air, .source = source };
+}
+
+/// marks a segment's address range, rejecting overflow past xFFFF and
+/// addresses already claimed by an earlier input
+fn claim(
+    used: *std.StaticBitSet(65536),
+    earlier: []const Segment,
+    seg: Segment,
+) Error!void {
+    const origin: usize = seg.air.origin;
+    const len = seg.air.lines.items.len;
+    if (origin + len > 65536) {
+        std.log.err(
+            "segment at x{X:04} with {} words overflows memory",
+            .{ seg.air.origin, len },
+        );
+        return error.AssemblyFailed;
+    }
+    for (0..len) |i| {
+        const addr = origin + i;
+        if (used.isSet(addr)) {
+            std.log.err("address x{X:04} in {s} already loaded by {s}", .{
+                addr,
+                seg.source.path orelse "?",
+                ownerOf(earlier, addr) orelse "an earlier input",
+            });
+            return error.AssemblyFailed;
+        }
+        used.set(addr);
+    }
+}
+
+/// the earlier segment that claimed addr, for conflict diagnostics
+fn ownerOf(earlier: []const Segment, addr: usize) ?[]const u8 {
+    for (earlier) |seg| {
+        const origin: usize = seg.air.origin;
+        if (addr >= origin and addr < origin + seg.air.lines.items.len) {
+            return seg.source.path;
+        }
+    }
+    return null;
 }
 
 /// scratch locations for the temp object, runtime and trap header
@@ -136,7 +249,12 @@ pub fn compileAndLink(
     dynamic: bool,
     lib_path: ?[]const u8,
 ) CompileError!void {
-    var output = try codegen.CodeGen.emit(&program.air, gpa, &table.symbols);
+    var airs: std.ArrayList(*const elk.Air) = .empty;
+    defer airs.deinit(gpa);
+    for (program.segments) |*seg| {
+        try airs.append(gpa, &seg.air);
+    }
+    var output = try codegen.CodeGen.emit(airs.items, gpa, &table.symbols);
     defer output.deinit();
 
     var machine = if (triple) |t| blk: {
@@ -173,7 +291,7 @@ pub fn compileAndLink(
     const object = try machine.emitObjectAlloc(gpa, output.module);
     defer gpa.free(object);
 
-    const scratch = initScratchPaths(program.source.path);
+    const scratch = initScratchPaths(program.mainPath());
 
     errdefer std.Io.Dir.cwd().deleteFile(io, scratch.obj) catch {};
     try writeFile(io, scratch.obj, object);

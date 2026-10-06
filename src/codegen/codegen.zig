@@ -34,7 +34,10 @@ pub const Output = struct {
 };
 
 pub const CodeGen = struct {
-    air: *const elk.Air,
+    /// LC-3 address of every word, in ascending origin order
+    addresses: []const u16,
+    /// global block index per address, -1 where no word is loaded
+    addr_to_block: []const i32,
     module: llvm.module.Module,
     builder: llvm.builder.Builder,
     gpa: std.mem.Allocator,
@@ -67,14 +70,71 @@ pub const CodeGen = struct {
     dispatch_block: bindings.BasicBlockRef,
 
     /// lowers a whole program into an LLVM module
+    /// airs[0] is the main file; blocks are ordered by ascending origin
     pub fn emit(
-        air: *const elk.Air,
+        airs: []const *const elk.Air,
         gpa: std.mem.Allocator,
         trap_symbols: *const [256]?[:0]const u8,
     ) Error!Output {
+        if (airs.len == 0) {
+            std.log.err("no input files", .{});
+            return error.InvalidTarget;
+        }
+
+        // segments in ascending origin order; overlap was already
+        // rejected during assembly, so equal origins only come from
+        // empty segments, which contribute no blocks
+        const order = gpa.alloc(usize, airs.len) catch return error.OutOfMemory;
+        defer gpa.free(order);
+        for (order, 0..) |*slot, i| slot.* = i;
+        std.mem.sort(usize, order, airs, struct {
+            fn lessThan(ctx: []const *const elk.Air, a: usize, b: usize) bool {
+                return ctx[a].origin < ctx[b].origin;
+            }
+        }.lessThan);
+
+        var bases = gpa.alloc(usize, airs.len) catch return error.OutOfMemory;
+        defer gpa.free(bases);
+
+        var total: usize = 0;
+        for (order) |s| {
+            bases[s] = total;
+            total += airs[s].lines.items.len;
+        }
+
+        var addresses = gpa.alloc(u16, total) catch return error.OutOfMemory;
+        defer gpa.free(addresses);
+
+        var addr_to_block = gpa.alloc(i32, 65536) catch return error.OutOfMemory;
+        defer gpa.free(addr_to_block);
+        @memset(addr_to_block, -1);
+
+        for (order) |s| {
+            const air = airs[s];
+            const base = bases[s];
+            const origin: usize = air.origin;
+            for (air.lines.items, 0..) |_, i| {
+                if (origin + i >= 65536) {
+                    std.log.err(
+                        "segment at x{X:04} with {} words overflows memory",
+                        .{ air.origin, air.lines.items.len },
+                    );
+                    return error.InvalidTarget;
+                }
+                const addr: u16 = @intCast(origin + i);
+                const global = base + i;
+                if (addr_to_block[addr] != -1) {
+                    std.log.err("address x{X:04} loaded by multiple inputs", .{addr});
+                    return error.InvalidTarget;
+                }
+                addr_to_block[addr] = @intCast(global);
+                addresses[global] = addr;
+            }
+        }
+
         const context = llvm.context.Context.create();
 
-        const line_count = air.lines.items.len;
+        const line_count = total;
 
         var blocks = gpa.alloc(bindings.BasicBlockRef, line_count + 1) catch |err| {
             context.dispose();
@@ -90,7 +150,8 @@ pub const CodeGen = struct {
         output.module = llvm.module.Module.create("lcc", context);
 
         var cg: CodeGen = .{
-            .air = air,
+            .addresses = addresses,
+            .addr_to_block = addr_to_block,
             .module = output.module,
             .builder = builder,
             .gpa = gpa,
@@ -160,8 +221,11 @@ pub const CodeGen = struct {
         _ = cg.builder.buildStore(cg.cc_slot, cg.contextFieldAddress(3));
 
         // store all encoded words into memory before execution starts
-        for (air.lines.items, 0..) |line, i| {
-            try cg.storeProgramWord(i, line.statement.encode());
+        for (airs, 0..) |air, s| {
+            const base = bases[s];
+            for (air.lines.items, 0..) |line, i| {
+                try cg.storeProgramWord(base + i, line.statement.encode());
+            }
         }
 
         for (0..line_count) |i| {
@@ -172,24 +236,33 @@ pub const CodeGen = struct {
         cg.blocks[line_count] = bindings.LLVMAppendBasicBlockInContext(context.ref, main_fn, "exit");
         cg.dispatch_block = bindings.LLVMAppendBasicBlockInContext(context.ref, main_fn, "dispatch");
 
-        _ = cg.builder.buildBr(cg.blocks[0]);
+        // entry is the first word of the main file, wherever it sits in
+        // the origin-ordered block layout
+        _ = cg.builder.buildBr(cg.blocks[bases[0]]);
 
-        for (air.lines.items, 0..) |line, i| {
-            cg.builder.positionAtEnd(cg.blocks[i]);
-            switch (line.statement) {
-                .raw_word => {
-                    // data words are always treated as NOPs
-                    _ = cg.builder.buildBr(cg.blocks[i + 1]);
-                    continue;
-                },
-                .instruction => |inst| {
-                    const terminated = try instruction.lower(&cg, inst, i);
-                    // fall through unless the instruction ended its block
-                    if (!terminated) {
-                        _ = cg.builder.buildBr(cg.blocks[i + 1]);
-                    }
-                },
-                .unresolved_word => unreachable,
+        // lower in ascending origin order: each word falls through to the
+        // next word by address, and a file's last word falls through to
+        // the next file's first word, as if the inputs were concatenated
+        // in .ORIG order
+        var index: usize = 0;
+        for (order) |s| {
+            for (airs[s].lines.items) |line| {
+                cg.builder.positionAtEnd(cg.blocks[index]);
+                switch (line.statement) {
+                    .raw_word => {
+                        // data words are always treated as NOPs
+                        _ = cg.builder.buildBr(cg.blocks[index + 1]);
+                    },
+                    .instruction => |inst| {
+                        const terminated = try instruction.lower(&cg, inst, index);
+                        // fall through unless the instruction ended its block
+                        if (!terminated) {
+                            _ = cg.builder.buildBr(cg.blocks[index + 1]);
+                        }
+                    },
+                    .unresolved_word => unreachable,
+                }
+                index += 1;
             }
         }
 
@@ -207,7 +280,7 @@ pub const CodeGen = struct {
         for (0..line_count) |j| {
             llvm.builder.Builder.addCase(
                 switch_inst,
-                llvm.value.constInt(cg.word_type, @intCast(air.origin + j)),
+                llvm.value.constInt(cg.word_type, @intCast(cg.addresses[j])),
                 cg.blocks[j],
             );
         }
@@ -224,11 +297,16 @@ pub const CodeGen = struct {
         return output;
     }
 
+    /// LC-3 address of a global word index
+    pub fn addressOf(cg: *CodeGen, index: usize) u16 {
+        return cg.addresses[index];
+    }
+
     /// stores one encoded word at its address
     fn storeProgramWord(cg: *CodeGen, index: usize, word: u16) Error!void {
         const address = llvm.value.constInt(
             cg.word_type,
-            @intCast(cg.air.origin + index),
+            @intCast(cg.addresses[index]),
         );
         const pointer = cg.builder.buildMemoryAddress(cg.memory_global, address);
         _ = cg.builder.buildStore(llvm.value.constInt(cg.word_type, word), pointer);
@@ -236,9 +314,10 @@ pub const CodeGen = struct {
 
     /// LC-3 value of PC while executing word index
     pub fn pcValue(cg: *CodeGen, index: usize) bindings.ValueRef {
+        const next: u32 = @as(u32, cg.addresses[index]) + 1;
         return llvm.value.constInt(
             cg.word_type,
-            @as(i64, cg.air.origin) + @as(i64, @intCast(index)) + 1,
+            @intCast(next & 0xFFFF),
         );
     }
 
@@ -293,16 +372,18 @@ pub const CodeGen = struct {
         _ = cg.builder.buildBr(cg.dispatch_block);
     }
 
-    /// validates a PC-relative target against the program bounds
+    /// maps a PC-relative transfer onto its global block
     pub fn branchTargetIndex(cg: *CodeGen, index: usize, offset: i64) Error!usize {
-        const target = @as(i64, @intCast(index)) + 1 + offset;
-        if (target < 0 or target >= cg.air.lines.items.len) {
-            std.log.err(
-                "control transfer from x{X} reaches x{X}, outside the program image",
-                .{ @as(u64, @intCast(cg.air.origin + index + 1)), @as(i64, cg.air.origin) + target },
-            );
-            return error.InvalidTarget;
+        const pc = @as(i64, cg.addresses[index]) + 1;
+        const target = pc + offset;
+        if (target >= 0 and target < 65536) {
+            const mapped = cg.addr_to_block[@intCast(target)];
+            if (mapped >= 0) return @intCast(mapped);
         }
-        return @intCast(target);
+        std.log.err(
+            "control transfer from x{X} reaches x{X}, outside the program image",
+            .{ cg.addresses[index], target },
+        );
+        return error.InvalidTarget;
     }
 };

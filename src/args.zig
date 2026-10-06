@@ -2,7 +2,7 @@ const std = @import("std");
 const zilc = @import("zilc");
 
 pub const usage =
-    \\Usage: lcc [options] <input.asm>
+    \\Usage: lcc [options] <input.asm> [extra.asm ...]
     \\
     \\Options:
     \\  -o <file>               Output executable path
@@ -39,7 +39,7 @@ pub const Optimize = enum(u8) {
 };
 
 pub const Options = struct {
-    input: []const u8,
+    inputs: []const []const u8,
     output: ?[]const u8,
     optimize: Optimize,
     emit_llvm: bool,
@@ -302,20 +302,20 @@ pub fn parse(
         } };
     }
 
-    const input = options.getPos(gpa, zilc.types.string, .input, 0) catch |err| switch (err) {
+    // first positional is the main file, any further positionals are
+    // extra files assembled alongside it at their own origins
+    _ = options.getPos(gpa, zilc.types.string, .input, 0) catch |err| switch (err) {
         error.OutOfMemory => return error.OutOfMemory,
         else => return error.Usage,
     };
-    if (options.pos.items.len > 1) {
-        errmsg.* = try std.fmt.allocPrint(arena, "unexpected argument '{s}'", .{options.pos.items[1]});
-        return error.Usage;
-    }
+    const inputs = try arena.alloc([]const u8, options.pos.items.len);
+    @memcpy(inputs, options.pos.items);
 
-    // shrink so the returned slice can be freed by exact length
+    // shrink so the returned slices can be freed by exact length
     if (scan.specs.items.len > 0) try scan.specs.shrinkToLen(arena);
 
     return .{ .run = .{
-        .input = input,
+        .inputs = inputs,
         .output = options.flags.output,
         .optimize = options.flags.optimize orelse .@"0",
         .emit_llvm = options.flags.emit_llvm,
@@ -356,7 +356,9 @@ test parse {
     // basic compile
     {
         const r = (try testParse(&.{"file.asm"})).run;
-        try expectEqualStrings("file.asm", r.input);
+        defer std.testing.allocator.free(r.inputs);
+        try expectEqual(@as(usize, 1), r.inputs.len);
+        try expectEqualStrings("file.asm", r.inputs[0]);
         try expectEqual(.@"0", r.optimize);
         try expect(!r.emit_llvm);
         try expect(!r.dynamic);
@@ -366,33 +368,60 @@ test parse {
     // -o flag
     {
         const r = (try testParse(&.{ "-o", "out", "file.asm" })).run;
+        defer std.testing.allocator.free(r.inputs);
         try expectEqualStrings("out", r.output.?);
     }
 
     // -O flags: joined value
-    try expectEqual(.@"0", (try testParse(&.{ "-O0", "f" })).run.optimize);
-    try expectEqual(.@"1", (try testParse(&.{ "-O1", "f" })).run.optimize);
-    try expectEqual(.@"2", (try testParse(&.{ "-O2", "f" })).run.optimize);
-    try expectEqual(.@"3", (try testParse(&.{ "-O3", "f" })).run.optimize);
-    try expectEqual(.none, (try testParse(&.{ "-Onone", "f" })).run.optimize);
+    {
+        inline for ([_][]const []const u8{ &.{ "-O0", "f" }, &.{ "-O1", "f" }, &.{ "-O2", "f" }, &.{ "-O3", "f" }, &.{ "-Onone", "f" } }, [_]Optimize{ .@"0", .@"1", .@"2", .@"3", .none }) |argv, want| {
+            const r = (try testParse(argv)).run;
+            defer std.testing.allocator.free(r.inputs);
+            try expectEqual(want, r.optimize);
+        }
+    }
 
     // -O flag: separate value
-    try expectEqual(.@"2", (try testParse(&.{ "-O", "2", "f" })).run.optimize);
+    {
+        const r = (try testParse(&.{ "-O", "2", "f" })).run;
+        defer std.testing.allocator.free(r.inputs);
+        try expectEqual(.@"2", r.optimize);
+    }
 
     // -emit-llvm
-    try expect((try testParse(&.{ "-emit-llvm", "f" })).run.emit_llvm);
+    {
+        const r = (try testParse(&.{ "-emit-llvm", "f" })).run;
+        defer std.testing.allocator.free(r.inputs);
+        try expect(r.emit_llvm);
+    }
 
     // -target
-    try expectEqualStrings("x86_64-linux-gnu", (try testParse(&.{ "-target", "x86_64-linux-gnu", "f" })).run.target.?);
+    {
+        const r = (try testParse(&.{ "-target", "x86_64-linux-gnu", "f" })).run;
+        defer std.testing.allocator.free(r.inputs);
+        try expectEqualStrings("x86_64-linux-gnu", r.target.?);
+    }
 
     // -arch
-    try expectEqualStrings("x86_64", (try testParse(&.{ "-arch", "x86_64", "f" })).run.arch.?);
+    {
+        const r = (try testParse(&.{ "-arch", "x86_64", "f" })).run;
+        defer std.testing.allocator.free(r.inputs);
+        try expectEqualStrings("x86_64", r.arch.?);
+    }
 
     // --dynamic
-    try expect((try testParse(&.{ "--dynamic", "f" })).run.dynamic);
+    {
+        const r = (try testParse(&.{ "--dynamic", "f" })).run;
+        defer std.testing.allocator.free(r.inputs);
+        try expect(r.dynamic);
+    }
 
     // --lib-path
-    try expectEqualStrings("/usr/lib", (try testParse(&.{ "--lib-path", "/usr/lib", "f" })).run.lib_path.?);
+    {
+        const r = (try testParse(&.{ "--lib-path", "/usr/lib", "f" })).run;
+        defer std.testing.allocator.free(r.inputs);
+        try expectEqualStrings("/usr/lib", r.lib_path.?);
+    }
 
     // --generate-liblc3
     {
@@ -403,6 +432,7 @@ test parse {
     // combined flags
     {
         const r = (try testParse(&.{ "-o", "out", "-O2", "-emit-llvm", "-arch", "arm64", "--dynamic", "--lib-path", "/tmp", "f" })).run;
+        defer std.testing.allocator.free(r.inputs);
         try expectEqualStrings("out", r.output.?);
         try expectEqual(.@"2", r.optimize);
         try expect(r.emit_llvm);
@@ -412,15 +442,34 @@ test parse {
     }
 
     // end-of-options marker
-    try expectEqualStrings("file.asm", (try testParse(&.{ "--", "file.asm" })).run.input);
+    {
+        const r = (try testParse(&.{ "--", "file.asm" })).run;
+        defer std.testing.allocator.free(r.inputs);
+        try expectEqualStrings("file.asm", r.inputs[0]);
+    }
+
+    // multiple inputs: first is main, rest are extras
+    {
+        const r = (try testParse(&.{ "main.asm", "extra1.asm", "extra2.asm" })).run;
+        defer std.testing.allocator.free(r.inputs);
+        try expectEqual(@as(usize, 3), r.inputs.len);
+        try expectEqualStrings("main.asm", r.inputs[0]);
+        try expectEqualStrings("extra1.asm", r.inputs[1]);
+        try expectEqualStrings("extra2.asm", r.inputs[2]);
+    }
 
     // no -traps: empty specs
-    try expectEqual(@as(usize, 0), (try testParse(&.{"f"})).run.trap_specs.len);
+    {
+        const r = (try testParse(&.{"f"})).run;
+        defer std.testing.allocator.free(r.inputs);
+        try expectEqual(@as(usize, 0), r.trap_specs.len);
+    }
 
     // -traps: one path per flag, repeated
     {
         const r = (try testParse(&.{ "-traps", "a.c", "-traps", "b.cpp", "f" })).run;
         defer std.testing.allocator.free(r.trap_specs);
+        defer std.testing.allocator.free(r.inputs);
         try expectEqual(@as(usize, 2), r.trap_specs.len);
         try expectEqualStrings("a.c", r.trap_specs[0]);
         try expectEqualStrings("b.cpp", r.trap_specs[1]);
@@ -430,6 +479,7 @@ test parse {
     {
         const r = (try testParse(&.{ "--traps", "x", "f" })).run;
         defer std.testing.allocator.free(r.trap_specs);
+        defer std.testing.allocator.free(r.inputs);
         try expectEqual(@as(usize, 1), r.trap_specs.len);
         try expectEqualStrings("x", r.trap_specs[0]);
     }
@@ -437,7 +487,8 @@ test parse {
     // -traps after the -- marker stays positional
     {
         const r = (try testParse(&.{ "--", "-traps" })).run;
-        try expectEqualStrings("-traps", r.input);
+        defer std.testing.allocator.free(r.inputs);
+        try expectEqualStrings("-traps", r.inputs[0]);
         try expectEqual(@as(usize, 0), r.trap_specs.len);
     }
 
@@ -471,8 +522,10 @@ test parse {
         try std.testing.expectError(error.InvalidValue, parse(a, a, &.{ "-O5", "f" }, &writer, &errmsg));
         try expectEqualStrings("invalid optimisation level '5' (expected -Onone or -O0..-O3)", errmsg.?);
 
-        errmsg = null;
-        try std.testing.expectError(error.Usage, parse(a, a, &.{ "f", "g" }, &writer, &errmsg));
-        try expectEqualStrings("unexpected argument 'g'", errmsg.?);
+        // multiple positionals are accepted (main + extras)
+        {
+            const r = (try parse(a, a, &.{ "f", "g" }, &writer, &errmsg)).run;
+            try expectEqual(@as(usize, 2), r.inputs.len);
+        }
     }
 }
