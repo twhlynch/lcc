@@ -8,3 +8,8 @@ liblc3.*
 *.out
 *.o
 *.obj
+*.a
+*.so
+*.dylib
+*.rlib
+*.dSYM

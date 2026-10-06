@@ -17,3 +17,8 @@
 *.out
 *.o
 *.obj
+*.a
+*.so
+*.dylib
+*.rlib
+*.dSYM

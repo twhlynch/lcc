@@ -6,8 +6,9 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # install zig 0.16
-RUN curl -L https://ziglang.org/download/0.16.0/zig-x86_64-linux-0.16.0.tar.xz | tar -xJ -C /usr/local && \
-    ln -s /usr/local/zig-x86_64-linux-0.16.0/zig /usr/local/bin/zig
+RUN ZIG_ARCH=$(uname -m) && \
+    curl -L https://ziglang.org/download/0.16.0/zig-${ZIG_ARCH}-linux-0.16.0.tar.xz | tar -xJ -C /usr/local && \
+    ln -s /usr/local/zig-${ZIG_ARCH}-linux-0.16.0/zig /usr/local/bin/zig
 
 WORKDIR /src
 COPY . .

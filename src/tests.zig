@@ -1,6 +1,7 @@
 //! end-to-end pipeline tests
 
 const std = @import("std");
+const trapsets = @import("trapsets.zig");
 
 const lcc_exe = "zig-out/bin/lcc";
 const test_dir = ".lcc-test";
@@ -24,8 +25,8 @@ const examples = [_]Example{
     .{ .name = "pyramid", .exit_code = 0, .stdout = "Pyramid height (0-9): 1\n*\n" },
     .{ .name = "subroutines", .exit_code = 50 },
     .{ .name = "uppercase", .exit_code = 0, .stdout = "1\n" },
-    .{ .name = "subsubroutine", .exit_code = 0, .stdout = "12289\n12294\n12294\n12289\n" },
-    .{ .name = "debug", .exit_code = 0, .stdout = "1\n3\n6\n10\n15\n21\n28\n36\n45\n55\n66\n" },
+    .{ .name = "subsubroutine", .exit_code = 0, .stdout = "12289122941229412289\n" },
+    .{ .name = "debug", .exit_code = 0, .stdout = "1361015212836455566\n" },
     .{
         .name = "box",
         .exit_code = 0,
@@ -105,6 +106,14 @@ fn cleanup(io: std.Io, opts: struct {
     const cwd = std.Io.Dir.cwd();
     for (opts.files) |f| cwd.deleteFile(io, f) catch {};
     for (opts.dirs) |d| cwd.deleteTree(io, d) catch {};
+}
+
+fn countFlag(flags: []const []const u8, want: []const u8) usize {
+    var count: usize = 0;
+    for (flags) |flag| {
+        if (std.mem.eql(u8, flag, want)) count += 1;
+    }
+    return count;
 }
 
 /// compiles one example at opt level and executes the result
@@ -423,4 +432,394 @@ fn requireLcc(io: std.Io) void {
         std.debug.print("`{s}` not found; run `zig build` first\n", .{lcc_exe});
         @panic("missing lcc binary");
     };
+}
+
+/// write a fixture file into the test directory
+fn writeFixture(io: std.Io, path: []const u8, bytes: []const u8) !void {
+    const file = try std.Io.Dir.cwd().createFile(io, path, .{});
+    defer file.close(io);
+
+    var buffer: [4096]u8 = undefined;
+    var writer = file.writer(io, &buffer);
+    try writer.interface.writeAll(bytes);
+    try writer.interface.flush();
+}
+
+/// run lcc and return its exit code plus captured stdout/stderr
+fn runLcc(alloc: std.mem.Allocator, io: std.Io, argv: []const []const u8) !struct { code: u8, stdout: []const u8, stderr: []const u8 } {
+    const result = try std.process.run(alloc, io, .{ .argv = argv });
+    return .{
+        .code = switch (result.term) {
+            .exited => |code| code,
+            else => return error.Crashed,
+        },
+        .stdout = result.stdout,
+        .stderr = result.stderr,
+    };
+}
+
+test "trap set can override a standard trap" {
+    requireLcc(std.testing.io);
+    try ensureTestDir(std.testing.io);
+    const io = std.testing.io;
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    const fixture = test_dir ++ "/ovr.c";
+    try writeFixture(io, fixture, "LCC_TRAP(0x26, putn) {}\n");
+
+    var out_buf: [128]u8 = undefined;
+    const out = try outPath(&out_buf, "override_putn");
+    const compile = try runLcc(alloc, io, &.{ lcc_exe, "-o", out, "-traps", fixture, "examples/subsubroutine.asm" });
+    defer cleanup(io, .{ .files = &.{out} });
+    try std.testing.expectEqual(@as(u8, 0), compile.code);
+
+    const run = try execWithStdin(alloc, io, &.{out}, "1\n");
+    try std.testing.expectEqual(@as(u8, 0), run.exit);
+    try std.testing.expectEqualStrings("", run.stdout);
+}
+
+test "multiple trap sets load together" {
+    requireLcc(std.testing.io);
+    try ensureTestDir(std.testing.io);
+    const io = std.testing.io;
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    try writeFixture(io, test_dir ++ "/alpha.c",
+        \\LCC_TRAP(0x30, alpha)
+        \\{
+        \\    ctx->reg[0] = 42;
+        \\}
+        \\
+    );
+    // beta is optional; only alpha is needed for behaviour
+    try writeFixture(io, test_dir ++ "/beta.c", "LCC_TRAP(0x31, beta) {}\n");
+
+    var out_buf: [128]u8 = undefined;
+    const out = try outPath(&out_buf, "multi_set");
+    const compile = try runLcc(alloc, io, &.{
+        lcc_exe,
+        "-o",
+        out,
+        "-traps",
+        test_dir ++ "/alpha.c",
+        "-traps",
+        test_dir ++ "/beta.c",
+        "examples/multi.asm",
+    });
+    defer cleanup(io, .{ .files = &.{ out, test_dir ++ "/alpha.c", test_dir ++ "/beta.c" } });
+    try std.testing.expectEqual(@as(u8, 0), compile.code);
+
+    const run = try execWithStdin(alloc, io, &.{out}, "1\n");
+    try std.testing.expectEqual(@as(u8, 0), run.exit);
+    try std.testing.expectEqualStrings("42\n", run.stdout);
+}
+
+test "trap set conflicts are rejected" {
+    requireLcc(std.testing.io);
+    try ensureTestDir(std.testing.io);
+    const io = std.testing.io;
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    // two sets claiming the same vector
+    try writeFixture(io, test_dir ++ "/one.c", "LCC_TRAP(0x30, alpha) {}\n");
+    try writeFixture(io, test_dir ++ "/two.c", "LCC_TRAP(0x30, gamma) {}\n");
+    {
+        const result = try runLcc(alloc, io, &.{
+            lcc_exe,
+            "-traps",
+            test_dir ++ "/one.c",
+            "-traps",
+            test_dir ++ "/two.c",
+            "examples/hello.asm",
+        });
+        defer cleanup(io, .{ .files = &.{ test_dir ++ "/one.c", test_dir ++ "/two.c" } });
+        try std.testing.expectEqual(@as(u8, 2), result.code);
+        try std.testing.expect(std.mem.indexOf(u8, result.stderr, "already provided by trap set") != null);
+    }
+
+    // a set may not rename a standard trap
+    try writeFixture(io, test_dir ++ "/rename.c", "LCC_TRAP(0x26, printn) {}\n");
+    {
+        const result = try runLcc(alloc, io, &.{ lcc_exe, "-traps", test_dir ++ "/rename.c", "examples/hello.asm" });
+        defer cleanup(io, .{ .files = &.{test_dir ++ "/rename.c"} });
+        try std.testing.expectEqual(@as(u8, 2), result.code);
+        try std.testing.expect(std.mem.indexOf(u8, result.stderr, "cannot redeclare") != null);
+    }
+
+    // aliases must be lowercase letters
+    try writeFixture(io, test_dir ++ "/badalias.c", "LCC_TRAP(0x30, Bad1) {}\n");
+    {
+        const result = try runLcc(alloc, io, &.{ lcc_exe, "-traps", test_dir ++ "/badalias.c", "examples/hello.asm" });
+        defer cleanup(io, .{ .files = &.{test_dir ++ "/badalias.c"} });
+        try std.testing.expectEqual(@as(u8, 2), result.code);
+        try std.testing.expect(std.mem.indexOf(u8, result.stderr, "invalid trap alias") != null);
+    }
+}
+
+test "time and sleep set runs" {
+    requireLcc(std.testing.io);
+    try ensureTestDir(std.testing.io);
+    const io = std.testing.io;
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    // print the current epoch as two words: high then low
+    defer cleanup(io, .{ .files = &.{test_dir ++ "/time_out"} });
+
+    var time_buf: [128]u8 = undefined;
+    const time_out = try outPath(&time_buf, "time_out");
+    const compile = try runLcc(alloc, io, &.{ lcc_exe, "-o", time_out, "-traps", "src/runtime/sets/time.cpp", "examples/time.asm" });
+    try std.testing.expectEqual(@as(u8, 0), compile.code);
+
+    const run = try execWithStdin(alloc, io, &.{time_out}, "1\n");
+    try std.testing.expectEqual(@as(u8, 0), run.exit);
+
+    var lines = std.mem.splitScalar(u8, run.stdout, '\n');
+    const high = try std.fmt.parseInt(u32, lines.next().?, 10);
+    const low = try std.fmt.parseInt(u32, lines.next().?, 10);
+    const epoch = (@as(i64, @intCast(high)) << 16) + @as(i64, @intCast(low));
+    const now = std.Io.Timestamp.now(io, .real).toSeconds();
+    try std.testing.expect(@abs(now - epoch) < 300);
+
+    // sleep for 300ms; the delay must be visible in wall time
+    defer cleanup(io, .{ .files = &.{test_dir ++ "/sleep_out"} });
+
+    var sleep_buf: [128]u8 = undefined;
+    const sleep_out = try outPath(&sleep_buf, "sleep_out");
+    const compile2 = try runLcc(alloc, io, &.{ lcc_exe, "-o", sleep_out, "-traps", "src/runtime/sets/time.cpp", "examples/sleep.asm" });
+    try std.testing.expectEqual(@as(u8, 0), compile2.code);
+
+    const start = std.Io.Timestamp.now(io, .real);
+    const run2 = try execWithStdin(alloc, io, &.{sleep_out}, "1\n");
+    const elapsed = start.durationTo(std.Io.Timestamp.now(io, .real)).toMilliseconds();
+    try std.testing.expectEqual(@as(u8, 0), run2.exit);
+    try std.testing.expect(elapsed >= 250);
+}
+
+test "seed and rand set runs" {
+    requireLcc(std.testing.io);
+    try ensureTestDir(std.testing.io);
+    const io = std.testing.io;
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    // build the zig implementation into an object lcc can link
+    const obj = "src/runtime/sets/rand.o";
+    const build = try std.process.run(alloc, io, .{ .argv = &.{
+        "zig",
+        "build-obj",
+        "-OReleaseFast",
+        "src/runtime/sets/rand.zig",
+        "-femit-bin=" ++ obj,
+    } });
+    defer alloc.free(build.stdout);
+    defer alloc.free(build.stderr);
+    switch (build.term) {
+        .exited => |code| if (code != 0) {
+            std.debug.print("zig build-obj failed ({d}): {s}{s}\n", .{ code, build.stderr, build.stdout });
+            return error.BuildObjFailed;
+        },
+        else => {
+            std.debug.print("zig build-obj crashed\n{s}", .{build.stderr});
+            return error.BuildObjFailed;
+        },
+    }
+
+    defer cleanup(io, .{ .files = &.{ obj, test_dir ++ "/rand_out" } });
+
+    var out_buf: [128]u8 = undefined;
+    const out = try outPath(&out_buf, "rand_out");
+    const compile = try runLcc(alloc, io, &.{ lcc_exe, "-o", out, "-traps", "src/runtime/sets/rand.c", "examples/rand.asm" });
+    try std.testing.expectEqual(@as(u8, 0), compile.code);
+
+    const run = try execWithStdin(alloc, io, &.{out}, "1\n");
+    try std.testing.expectEqual(@as(u8, 0), run.exit);
+
+    // the same DefaultPrng sequence the set generates for seed 42
+    var prng = std.Random.DefaultPrng.init(42);
+    var expected: [3]u16 = undefined;
+    for (&expected) |*value| {
+        value.* = prng.random().int(u16);
+    }
+
+    var lines = std.mem.splitScalar(u8, run.stdout, '\n');
+    for (expected) |want| {
+        const line = lines.next() orelse return error.MissingOutput;
+        const got = try std.fmt.parseInt(u16, line, 10);
+        try std.testing.expectEqual(want, got);
+    }
+}
+
+test "C++ trap sets link the C++ runtime automatically" {
+    requireLcc(std.testing.io);
+    try ensureTestDir(std.testing.io);
+    const io = std.testing.io;
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    try writeFixture(io, test_dir ++ "/cxxset.cpp",
+        \\#include "lcc_trap.h"
+        \\#include <string>
+        \\
+        \\LCC_TRAP(0x30, cxxhello)
+        \\{
+        \\    std::string word = "hi";
+        \\    ctx->reg[0] = (unsigned short)word.size();
+        \\}
+    );
+    defer cleanup(io, .{ .files = &.{ test_dir ++ "/cxxset.cpp", test_dir ++ "/cxx.out" } });
+
+    var out_buf: [128]u8 = undefined;
+    const out = try outPath(&out_buf, "cxx.out");
+    const result = try runLcc(alloc, io, &.{ lcc_exe, "-traps", test_dir ++ "/cxxset.cpp", "-o", out, "examples/cxx.asm" });
+    try std.testing.expectEqual(@as(u8, 0), result.code);
+}
+
+test "C++ runtime flag is added once" {
+    try ensureTestDir(std.testing.io);
+    const io = std.testing.io;
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    const cxx = trapsets.cxxRuntimeFlag();
+    const other: []const u8 = if (std.mem.eql(u8, cxx, "-lc++")) "-lstdc++" else "-lc++";
+
+    // time.cpp is C++ but does not declare a runtime
+    var ts = try trapsets.load(alloc, io, &.{"src/runtime/sets/time.cpp"});
+    defer ts.deinit(alloc);
+    try std.testing.expectEqual(@as(usize, 1), countFlag(ts.link_flags.items, cxx));
+
+    // a C++ set that declares the platform runtime itself is not doubled
+    const declared_src = try std.fmt.allocPrint(alloc, "LCC_LINK({s})\nLCC_TRAP(0x30, cxxflag) {{}}\n", .{cxx});
+    try writeFixture(io, test_dir ++ "/declcpp.cpp", declared_src);
+    defer cleanup(io, .{ .files = &.{test_dir ++ "/declcpp.cpp"} });
+    var dup = try trapsets.load(alloc, io, &.{test_dir ++ "/declcpp.cpp"});
+    defer dup.deinit(alloc);
+    try std.testing.expectEqual(@as(usize, 1), countFlag(dup.link_flags.items, cxx));
+
+    // an alternative runtime in LCC_LINK suppresses the default
+    const alt_src = try std.fmt.allocPrint(alloc, "LCC_LINK({s})\nLCC_TRAP(0x30, cxxalt) {{}}\n", .{other});
+    try writeFixture(io, test_dir ++ "/stdcpp.cpp", alt_src);
+    defer cleanup(io, .{ .files = &.{test_dir ++ "/stdcpp.cpp"} });
+    var alt = try trapsets.load(alloc, io, &.{test_dir ++ "/stdcpp.cpp"});
+    defer alt.deinit(alloc);
+    try std.testing.expectEqual(@as(usize, 0), countFlag(alt.link_flags.items, cxx));
+
+    // plain C sets stay clean
+    try writeFixture(io, test_dir ++ "/plain.c", "LCC_TRAP(0x30, plainflag) {}\n");
+    defer cleanup(io, .{ .files = &.{test_dir ++ "/plain.c"} });
+    var c = try trapsets.load(alloc, io, &.{test_dir ++ "/plain.c"});
+    defer c.deinit(alloc);
+    try std.testing.expectEqual(@as(usize, 0), countFlag(c.link_flags.items, cxx));
+}
+
+test "LCC_LINK paths resolve relative to the set file" {
+    try ensureTestDir(std.testing.io);
+    const io = std.testing.io;
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    try writeFixture(io, test_dir ++ "/linkpath.c",
+        \\LCC_TRAP(0x30, linky);
+        \\LCC_LINK(./deps/lib.a, -lmcpp, /opt/lib/abs.a)
+        \\
+    );
+    defer cleanup(io, .{ .files = &.{test_dir ++ "/linkpath.c"} });
+
+    var ts = try trapsets.load(alloc, io, &.{test_dir ++ "/linkpath.c"});
+    defer ts.deinit(alloc);
+    try std.testing.expectEqual(@as(usize, 3), ts.link_flags.items.len);
+    try std.testing.expectEqualStrings(test_dir ++ "/deps/lib.a", ts.link_flags.items[0]);
+    try std.testing.expectEqualStrings("-lmcpp", ts.link_flags.items[1]);
+    try std.testing.expectEqualStrings("/opt/lib/abs.a", ts.link_flags.items[2]);
+}
+
+test "generate traps header writes the ABI" {
+    requireLcc(std.testing.io);
+    const io = std.testing.io;
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    defer cleanup(io, .{ .files = &.{trapsets.trap_header_name} });
+    const result = try runLcc(arena.allocator(), io, &.{ lcc_exe, "-generate-traps-header" });
+    try std.testing.expectEqual(@as(u8, 0), result.code);
+
+    const header = try std.Io.Dir.cwd().readFileAlloc(io, trapsets.trap_header_name, arena.allocator(), .limited(1 << 20));
+    try std.testing.expect(std.mem.indexOf(u8, header, "lcc_trap_ctx") != null);
+    try std.testing.expect(std.mem.indexOf(u8, header, "LCC_TRAP") != null);
+}
+
+test "trap sets work with dynamic linking" {
+    requireLcc(std.testing.io);
+    try ensureTestDir(std.testing.io);
+    const io = std.testing.io;
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    try writeFixture(io, test_dir ++ "/dynset.cpp",
+        \\#include "lcc_trap.h"
+        \\#include <cstdio>
+        \\#include <string>
+        \\
+        \\LCC_TRAP(0x30, dynhello)
+        \\{
+        \\    std::string word = "CXX";
+        \\    std::printf("%s\n", word.c_str());
+        \\    ctx->reg[0] = 0;
+        \\}
+        \\
+    );
+    defer cleanup(io, .{ .files = &.{
+        test_dir ++ "/dynset.cpp",
+        test_dir ++ "/dyn_set",
+        "liblc3.dylib",
+        "liblc3.so",
+    } });
+
+    var out_buf: [128]u8 = undefined;
+    const out = try outPath(&out_buf, "dyn_set");
+    const compile = try runLcc(alloc, io, &.{ lcc_exe, "-o", out, "-dynamic", "-traps", test_dir ++ "/dynset.cpp", "examples/dyn.asm" });
+    try std.testing.expectEqual(@as(u8, 0), compile.code);
+
+    const run = try execWithStdin(alloc, io, &.{out}, "1\n");
+    try std.testing.expectEqual(@as(u8, 0), run.exit);
+    try std.testing.expectEqualStrings("CXX\n", run.stdout);
+}
+
+test "standard trap override works with dynamic linking" {
+    requireLcc(std.testing.io);
+    try ensureTestDir(std.testing.io);
+    const io = std.testing.io;
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    try writeFixture(io, test_dir ++ "/ovrdyn.c", "LCC_TRAP(0x26, putn) {}\n");
+    defer cleanup(io, .{ .files = &.{
+        test_dir ++ "/ovrdyn.c",
+        test_dir ++ "/override_dyn",
+        "liblc3.dylib",
+        "liblc3.so",
+    } });
+
+    var out_buf: [128]u8 = undefined;
+    const out = try outPath(&out_buf, "override_dyn");
+    const compile = try runLcc(alloc, io, &.{ lcc_exe, "-o", out, "-dynamic", "-traps", test_dir ++ "/ovrdyn.c", "examples/subsubroutine.asm" });
+    try std.testing.expectEqual(@as(u8, 0), compile.code);
+
+    const run = try execWithStdin(alloc, io, &.{out}, "1\n");
+    try std.testing.expectEqual(@as(u8, 0), run.exit);
+    try std.testing.expectEqualStrings("", run.stdout);
 }

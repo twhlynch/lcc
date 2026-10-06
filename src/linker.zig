@@ -10,7 +10,9 @@ const candidate_dirs = [_][]const u8{
     "/usr/local/opt/llvm/bin",
 };
 
-/// links object_path and runtime_path into output_path
+/// links object_path and the C sources into output_path
+/// include_header is force-included while compiling those sources (the
+/// trap ABI header); extra_flags are appended after them (LCC_LINK)
 /// triple is passed to clang for cross compilation when given
 /// when dynamic, links against liblc3 instead of the runtime source
 pub fn link(
@@ -18,7 +20,9 @@ pub fn link(
     gpa: std.mem.Allocator,
     environ_map: ?*const std.process.Environ.Map,
     object_path: []const u8,
-    runtime_path: []const u8,
+    sources: []const []const u8,
+    include_header: ?[]const u8,
+    extra_flags: []const []const u8,
     triple: ?[]const u8,
     output_path: []const u8,
     dynamic: bool,
@@ -44,17 +48,38 @@ pub fn link(
     };
 
     args.appendSlice(gpa, &.{
-        "-ffunction-sections", "-fdata-sections", object_path,
+        "-ffunction-sections", "-fdata-sections",
     }) catch {
+        return error.LinkFailed;
+    };
+
+    // force-include the trap ABI header for every compiled source;
+    // -iquote lets sources name it explicitly as #include "lcc_trap.h"
+    if (sources.len > 0) {
+        if (include_header) |header| {
+            args.appendSlice(gpa, &.{ "-include", header }) catch {
+                return error.LinkFailed;
+            };
+            args.appendSlice(gpa, &.{ "-iquote", std.fs.path.dirname(header) orelse "." }) catch {
+                return error.LinkFailed;
+            };
+        }
+    }
+
+    args.appendSlice(gpa, sources) catch {
+        return error.LinkFailed;
+    };
+
+    args.append(gpa, object_path) catch {
+        return error.LinkFailed;
+    };
+
+    args.appendSlice(gpa, extra_flags) catch {
         return error.LinkFailed;
     };
 
     if (dynamic) {
         addDynamicRuntime(&args, gpa, io, lib_path) catch {
-            return error.LinkFailed;
-        };
-    } else {
-        args.append(gpa, runtime_path) catch {
             return error.LinkFailed;
         };
     }
@@ -82,6 +107,7 @@ pub fn generateLib(
     gpa: std.mem.Allocator,
     environ_map: ?*const std.process.Environ.Map,
     source_path: []const u8,
+    include_header: ?[]const u8,
     output_path: []const u8,
     triple: ?[]const u8,
 ) LinkError!void {
@@ -107,6 +133,15 @@ pub fn generateLib(
         args.appendSlice(gpa, &.{
             "-install_name", "@rpath/liblc3.dylib",
         }) catch {
+            return error.LinkFailed;
+        };
+    }
+
+    if (include_header) |header| {
+        args.appendSlice(gpa, &.{ "-include", header }) catch {
+            return error.LinkFailed;
+        };
+        args.appendSlice(gpa, &.{ "-iquote", std.fs.path.dirname(header) orelse "." }) catch {
             return error.LinkFailed;
         };
     }

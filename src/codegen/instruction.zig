@@ -57,7 +57,8 @@ pub fn lower(cg: *CodeGen, instruction: elk.Instruction, index: usize) codegen.E
         },
 
         .trap => |ops| {
-            return traps.lower(cg, ops.vect.value.immediate.integer, index);
+            traps.lower(cg, ops.vect.value.immediate.integer, index);
+            return false;
         },
 
         .lea => |ops| {

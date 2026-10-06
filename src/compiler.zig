@@ -6,6 +6,7 @@ pub const elk = @import("elk.zig");
 pub const codegen = @import("codegen/codegen.zig");
 pub const linker = @import("linker.zig");
 pub const llvm = @import("llvmc/root.zig");
+pub const trapsets = @import("trapsets.zig");
 
 pub const Error = error{
     AssemblyFailed,
@@ -32,6 +33,7 @@ pub fn assembleFile(
     io: std.Io,
     gpa: std.mem.Allocator,
     path: []const u8,
+    traps: *const elk.Traps,
     reporter: *elk.reporting.Primary,
 ) Error!Program {
     var path_buffer: [std.fs.max_path_bytes]u8 = undefined;
@@ -56,7 +58,7 @@ pub fn assembleFile(
     var air = try elk.assemble(
         gpa,
         source,
-        &elk.standard_traps,
+        traps,
         elk.standard_policies,
         reporter,
     );
@@ -65,15 +67,17 @@ pub fn assembleFile(
     return .{ .air = air, .source = source, .text = text };
 }
 
-/// scratch locations for temp object file and runtime source
+/// scratch locations for the temp object, runtime and trap header
 var obj_scratch_buf: [64]u8 = undefined;
 var rt_scratch_buf: [64]u8 = undefined;
+var hdr_scratch_buf: [64]u8 = undefined;
 
-fn initScratchPaths(source_path: ?[]const u8) struct { obj: []const u8, rt: []const u8 } {
+fn initScratchPaths(source_path: ?[]const u8) struct { obj: []const u8, rt: []const u8, hdr: []const u8 } {
     const stem = if (source_path) |p| std.fs.path.basename(p) else "lcc-tmp";
     const obj = std.fmt.bufPrint(&obj_scratch_buf, ".{s}.o", .{stem}) catch "lcc-tmp.o";
     const rt = std.fmt.bufPrint(&rt_scratch_buf, ".{s}.c", .{stem}) catch "lcc-tmp.c";
-    return .{ .obj = obj, .rt = rt };
+    const hdr = std.fmt.bufPrint(&hdr_scratch_buf, ".{s}.trap/{s}", .{ stem, trapsets.trap_header_name }) catch ".lcc-tmp.trap/lcc_trap.h";
+    return .{ .obj = obj, .rt = rt, .hdr = hdr };
 }
 
 /// native trap runtime, written next to the object file at link time
@@ -87,7 +91,12 @@ pub const CompileError = error{
     EmissionFailed,
     PassRunFailed,
     OutOfMemory,
-} || linker.LinkError || std.Io.File.OpenError || std.Io.Writer.Error;
+} || linker.LinkError || std.Io.File.OpenError || std.Io.Writer.Error || error{
+    // createDirPath can fail with these beyond OpenError
+    DiskQuota,
+    LinkQuotaExceeded,
+    Streaming,
+};
 
 /// resolves the -target and -arch flags into an llvm triple
 /// -arch replaces the architecture component of the host triple
@@ -118,6 +127,7 @@ pub fn compileAndLink(
     io: std.Io,
     gpa: std.mem.Allocator,
     program: *const Program,
+    table: *const trapsets.Table,
     environ_map: ?*const std.process.Environ.Map,
     output_path: []const u8,
     level: llvm.pass.Level,
@@ -126,7 +136,7 @@ pub fn compileAndLink(
     dynamic: bool,
     lib_path: ?[]const u8,
 ) CompileError!void {
-    var output = try codegen.CodeGen.emit(&program.air, gpa);
+    var output = try codegen.CodeGen.emit(&program.air, gpa, &table.symbols);
     defer output.deinit();
 
     var machine = if (triple) |t| blk: {
@@ -166,27 +176,59 @@ pub fn compileAndLink(
     const scratch = initScratchPaths(program.source.path);
 
     errdefer std.Io.Dir.cwd().deleteFile(io, scratch.obj) catch {};
-    try writeScratch(io, scratch.obj, object);
+    try writeFile(io, scratch.obj, object);
+
+    // the static build compiles the runtime; every build compiles its
+    // sets, which are always used in place
+    var sources: std.ArrayList([]const u8) = .empty;
+    defer sources.deinit(gpa);
+    var wrote_rt = false;
+    errdefer if (wrote_rt) {
+        std.Io.Dir.cwd().deleteFile(io, scratch.rt) catch {};
+    };
+
+    if (!dynamic) {
+        wrote_rt = true;
+        try writeFile(io, scratch.rt, runtime_source);
+        try sources.append(gpa, scratch.rt);
+    }
+    for (table.sets.items) |set| {
+        try sources.append(gpa, set.path);
+    }
+
+    // the header is force-included while compiling the runtime and sets;
+    // function scope so a later link failure still removes it
+    const will_generate = dynamic and lib_path == null;
+    const write_header = sources.items.len > 0 or will_generate;
+    const hdr_dir = std.fs.path.dirname(scratch.hdr) orelse ".";
+    errdefer if (write_header) {
+        std.Io.Dir.cwd().deleteTree(io, hdr_dir) catch {};
+    };
+    if (write_header) {
+        try std.Io.Dir.cwd().createDirPath(io, hdr_dir);
+        try writeFile(io, scratch.hdr, trapsets.trap_header);
+    }
+    const include_header: ?[]const u8 = if (write_header) scratch.hdr else null;
 
     if (dynamic) {
-        if (lib_path == null) {
+        if (will_generate) {
             // no -L specified: auto-generate liblc3 in cwd
             errdefer std.Io.Dir.cwd().deleteFile(io, scratch.rt) catch {};
-            try writeScratch(io, scratch.rt, runtime_source);
-            try linker.generateLib(io, gpa, environ_map, scratch.rt, defaultLibName(), triple);
+            try writeFile(io, scratch.rt, runtime_source);
+            try linker.generateLib(io, gpa, environ_map, scratch.rt, include_header, defaultLibName(), triple);
             std.Io.Dir.cwd().deleteFile(io, scratch.rt) catch {};
         }
         // -L specified: link against the user's library, skip generation
-        try linker.link(io, gpa, environ_map, scratch.obj, "", triple, output_path, true, lib_path);
+        try linker.link(io, gpa, environ_map, scratch.obj, sources.items, include_header, table.link_flags.items, triple, output_path, true, lib_path);
     } else {
-        // static: compile and link the runtime source
-        errdefer std.Io.Dir.cwd().deleteFile(io, scratch.rt) catch {};
-        try writeScratch(io, scratch.rt, runtime_source);
-        try linker.link(io, gpa, environ_map, scratch.obj, scratch.rt, triple, output_path, false, null);
+        try linker.link(io, gpa, environ_map, scratch.obj, sources.items, include_header, table.link_flags.items, triple, output_path, false, null);
     }
 
     std.Io.Dir.cwd().deleteFile(io, scratch.obj) catch {};
-    if (!dynamic) {
+    if (write_header) {
+        std.Io.Dir.cwd().deleteTree(io, hdr_dir) catch {};
+    }
+    if (wrote_rt) {
         std.Io.Dir.cwd().deleteFile(io, scratch.rt) catch {};
     }
 }
@@ -207,10 +249,17 @@ pub fn generateLiblc3(
     const scratch = initScratchPaths(null);
 
     errdefer std.Io.Dir.cwd().deleteFile(io, scratch.rt) catch {};
-    try writeScratch(io, scratch.rt, runtime_source);
+    try writeFile(io, scratch.rt, runtime_source);
 
-    try linker.generateLib(io, gpa, environ_map, scratch.rt, output_path, triple);
+    // function scope: a later generateLib failure must still remove it
+    const hdr_dir = std.fs.path.dirname(scratch.hdr) orelse ".";
+    errdefer std.Io.Dir.cwd().deleteTree(io, hdr_dir) catch {};
+    try std.Io.Dir.cwd().createDirPath(io, hdr_dir);
+    try writeFile(io, scratch.hdr, trapsets.trap_header);
 
+    try linker.generateLib(io, gpa, environ_map, scratch.rt, scratch.hdr, output_path, triple);
+
+    std.Io.Dir.cwd().deleteTree(io, hdr_dir) catch {};
     std.Io.Dir.cwd().deleteFile(io, scratch.rt) catch {};
 }
 
@@ -247,7 +296,8 @@ fn printLlvm(io: std.Io, gpa: std.mem.Allocator, module: llvm.module.Module) voi
     stdout_writer.interface.flush() catch {};
 }
 
-fn writeScratch(io: std.Io, path: []const u8, bytes: []const u8) (std.Io.File.OpenError || std.Io.Writer.Error)!void {
+/// writes bytes to path, creating or truncating it
+pub fn writeFile(io: std.Io, path: []const u8, bytes: []const u8) (std.Io.File.OpenError || std.Io.Writer.Error)!void {
     const file = try std.Io.Dir.cwd().createFile(io, path, .{});
     defer file.close(io);
 

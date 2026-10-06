@@ -9,6 +9,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "lcc_trap.h"
+
 #if defined(__unix__) || defined(__APPLE__)
 #define LCC_POSIX 1
 #include <errno.h>
@@ -118,27 +120,28 @@ static void emit(unsigned char c)
 	at_newline = c == '\n';
 }
 
-unsigned short lc3_getc(void)
+void lc3_getc(lcc_trap_ctx *ctx)
 {
 	int c = read_byte();
 	if (c == EOF)
 	{
 		exit(1);
 	}
-	return (unsigned short)c;
+	ctx->reg[0] = (unsigned short)c;
 }
 
-void lc3_out(unsigned short word)
+void lc3_out(lcc_trap_ctx *ctx)
 {
-	emit(word & BYTE_MASK);
+	emit(ctx->reg[0] & BYTE_MASK);
 	(void)fflush(stdout);
 }
 
-void lc3_puts(const unsigned short *memory, unsigned short address)
+void lc3_puts(lcc_trap_ctx *ctx)
 {
+	unsigned short address = ctx->reg[0];
 	for (int i = 0; i < MEMORY_SIZE; i++)
 	{
-		unsigned short word = memory[address];
+		unsigned short word = ctx->memory[address];
 		if (word == 0x0000)
 		{
 			break;
@@ -152,7 +155,7 @@ void lc3_puts(const unsigned short *memory, unsigned short address)
 	(void)fflush(stdout);
 }
 
-unsigned short lc3_in(void)
+void lc3_in(lcc_trap_ctx *ctx)
 {
 	int c;
 
@@ -175,14 +178,15 @@ unsigned short lc3_in(void)
 		emit('\n');
 	}
 
-	return (unsigned short)c;
+	ctx->reg[0] = (unsigned short)c;
 }
 
-void lc3_putsp(const unsigned short *memory, unsigned short address)
+void lc3_putsp(lcc_trap_ctx *ctx)
 {
+	unsigned short address = ctx->reg[0];
 	for (int i = 0; i < MEMORY_SIZE; i++)
 	{
-		unsigned short word = memory[address];
+		unsigned short word = ctx->memory[address];
 		if (word == 0x0000)
 		{
 			break;
@@ -199,35 +203,21 @@ void lc3_putsp(const unsigned short *memory, unsigned short address)
 	(void)fflush(stdout);
 }
 
-void lc3_halt(void)
+void lc3_halt(lcc_trap_ctx *ctx)
 {
+	(void)ctx;
 	(void)fflush(stdout);
 	exit(0);
 }
 
-void lc3_putn(unsigned short word)
+void lc3_putn(lcc_trap_ctx *ctx)
 {
-	if (!at_newline)
-	{
-		(void)putchar('\n');
-		at_newline = 1;
-	}
-	(void)printf("%u\n", (unsigned int)word);
+	(void)printf("%u", (unsigned int)ctx->reg[0]);
 	(void)fflush(stdout);
+	at_newline = 0;
 }
 
-void lc3_reg(
-	unsigned short r0,
-	unsigned short r1,
-	unsigned short r2,
-	unsigned short r3,
-	unsigned short r4,
-	unsigned short r5,
-	unsigned short r6,
-	unsigned short r7,
-	unsigned short pc,
-	unsigned short cc
-)
+void lc3_reg(lcc_trap_ctx *ctx)
 {
 	// clang-format off
 	static const char *const ascii[ASCII_LIMIT] = {
@@ -257,11 +247,11 @@ void lc3_reg(
 	}
 
 	const char *cc_str;
-	if ((short)cc < 0)
+	if ((short)*ctx->cc < 0)
 	{
 		cc_str = "NEGATIVE";
 	}
-	else if (cc == 0)
+	else if (*ctx->cc == 0)
 	{
 		cc_str = "  ZERO  ";
 	}
@@ -270,17 +260,16 @@ void lc3_reg(
 		cc_str = "POSITIVE";
 	}
 
-	unsigned short regs[REGISTER_COUNT] = {r0, r1, r2, r3, r4, r5, r6, r7};
 	(void)printf("+----------------------------------+\n");
 	(void)printf("|       hex      int    uint   chr |\n");
 	for (int i = 0; i < REGISTER_COUNT; i++)
 	{
-		unsigned short r = regs[i];
+		unsigned short r = ctx->reg[i];
 		const char *ch = (r < ASCII_LIMIT) ? ascii[r] : "---";
 		(void)printf("| R%d  x%04X  %+7d  %6u   %s |\n", i, (unsigned int)r, (short)r, (unsigned int)r, ch);
 	}
 	(void)printf("+----------------+-----------------+\n");
-	(void)printf("|    PC x%04X    |   CC %s   |\n", (unsigned int)pc, cc_str);
+	(void)printf("|    PC x%04X    |   CC %s   |\n", (unsigned int)ctx->pc, cc_str);
 	(void)printf("+----------------+-----------------+\n");
 	(void)fflush(stdout);
 }

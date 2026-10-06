@@ -13,4 +13,5 @@ Checks: >
 
     -concurrency-mt-unsafe,
     -readability-identifier-length,
-    -bugprone-easily-swappable-parameters
+    -bugprone-easily-swappable-parameters,
+    -modernize-use-trailing-return-type

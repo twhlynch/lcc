@@ -4,11 +4,13 @@ const std = @import("std");
 
 const compiler = @import("compiler.zig");
 const elk = compiler.elk;
+const trapsets = compiler.trapsets;
 const args = @import("args.zig");
 const zilc = @import("zilc");
 
 test {
     _ = @import("tests.zig");
+    _ = @import("args.zig");
 }
 
 const Diagnostics = struct {
@@ -32,9 +34,10 @@ fn compile(
     io: std.Io,
     gpa: std.mem.Allocator,
     options: args.Options,
+    table: *const trapsets.Table,
     diags: *Diagnostics,
 ) (error{CompileFailed} || compiler.Error)!compiler.Program {
-    return compiler.assembleFile(io, gpa, options.input, &diags.reporter) catch |err| switch (err) {
+    return compiler.assembleFile(io, gpa, options.input, &table.traps, &diags.reporter) catch |err| switch (err) {
         error.AssemblyFailed => {
             diags.summarize();
             return error.CompileFailed;
@@ -75,8 +78,11 @@ pub fn main(init: std.process.Init) !u8 {
     var cli_args = try zilc.collectArgs(args_allocator, init.minimal.args);
     defer cli_args.deinit(init.arena.allocator());
 
-    const parsed = args.parse(gpa, gpa, cli_args.items, out) catch |err| switch (err) {
+    var errmsg: ?[]const u8 = null;
+    const parsed = args.parse(gpa, init.arena.allocator(), cli_args.items, out, &errmsg) catch |err| switch (err) {
         error.Usage, error.ParseFailed, error.InvalidValue => {
+            // zilc failures already reported themselves; only ours carry a message
+            if (errmsg) |msg| std.log.err("{s}", .{msg});
             try out.flush();
             return 2;
         },
@@ -88,6 +94,16 @@ pub fn main(init: std.process.Init) !u8 {
     const options = switch (parsed) {
         .help => return 0,
         .version => return 0,
+        .generate_traps_header => {
+            compiler.writeFile(io, trapsets.trap_header_name, trapsets.trap_header) catch |err| {
+                std.log.err("failed to write {s}: {s}", .{ trapsets.trap_header_name, @errorName(err) });
+                out.flush() catch {};
+                return 1;
+            };
+            try out.print("generated {s}\n", .{trapsets.trap_header_name});
+            try out.flush();
+            return 0;
+        },
         .generate_liblc3 => |gl| {
             const triple = compiler.resolveTriple(gpa, gl.target, gl.arch) catch |err| {
                 return err;
@@ -130,7 +146,18 @@ pub fn main(init: std.process.Init) !u8 {
     var diags: Diagnostics = undefined;
     diags.init(io);
 
-    var program = compile(io, gpa, options, &diags) catch |err| {
+    var table = trapsets.load(gpa, io, options.trap_specs) catch |err| switch (err) {
+        error.InvalidTrapSet => {
+            try out.flush();
+            return 2;
+        },
+        else => |other| {
+            return other;
+        },
+    };
+    defer table.deinit(gpa);
+
+    var program = compile(io, gpa, options, &table, &diags) catch |err| {
         std.log.err("compilation failed: {s}", .{@errorName(err)});
         try out.flush();
         return 1;
@@ -155,6 +182,7 @@ pub fn main(init: std.process.Init) !u8 {
         io,
         gpa,
         &program,
+        &table,
         init.environ_map,
         options.output orelse defaultOutput(options.input),
         compiler.optimizeLevel(options.optimize),
