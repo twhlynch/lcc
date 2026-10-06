@@ -60,6 +60,22 @@ given (`-arch x86_64` on macOS produces a Rosetta binary). LLVM backends are
 loaded from the shared library at runtime, so no rebuild is needed for
 different targets.
 
+### Multiple input files
+
+Several files can be compiled into a single program. The first file is the entry
+point, every other file is assembled at its own `.ORIG` address into the memory:
+
+```sh
+lcc examples/multifile.asm examples/multifile_extra.asm && ./multifile
+Hello from an extra file
+42
+```
+
+Labels are resolved per file, so reach across files with absolute addresses
+(`.FILL x3050`) instead. Execution starts at the first file and falls through to
+following origins, as if the sources were inserted at their origins. Files whose
+address ranges overlap are rejected.
+
 ### Dynamic linking
 
 By default, trap implementations are statically linked into every executable.
