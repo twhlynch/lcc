@@ -180,3 +180,34 @@ lcc program.asm -traps ./src/runtime/sets/minecraft.cpp
 | `getb` | `x2B`  | Read the block at (R0-R2) into R3   |
 | `setb` | `x2C`  | Set the block at (R0-R2) to R3      |
 | `geth` | `x2D`  | Read the height at (R0, R2) into R1 |
+
+## The syscall set
+
+`src/runtime/sets/syscalls.c` provides file traps `x50`-`x56` backed by the
+host file API:
+
+```sh
+lcc program.asm -traps ./src/runtime/sets/syscalls.c
+```
+
+| Trap     | Vector | Input                                | Output                   |
+| -------- | ------ | ------------------------------------ | ------------------------ |
+| `open`   | `x50`  | R0 = path address, R1 = mode         | R0 = fd, or -1           |
+| `close`  | `x51`  | R0 = fd                              | R0 = 0, or -1            |
+| `read`   | `x52`  | R0 = fd, R1 = buffer, R2 = count     | R0 = bytes, or -1        |
+| `write`  | `x53`  | R0 = fd, R1 = buffer, R2 = count     | R0 = bytes, or -1        |
+| `seek`   | `x54`  | R0 = fd, R1/R2 = offset, R3 = whence | R0/R1 = new offset       |
+| `size`   | `x55`  | R0 = fd                              | R0/R1 = size, or R0 = -1 |
+| `remove` | `x56`  | R0 = path address                    | R0 = 0, or -1            |
+
+Conventions:
+
+- File descriptors `0`, `1`, and `2` are stdin, stdout, and stderr.
+- Paths are NULL terminated strings with one character per word (like `puts`).
+- buffers hold one byte per word.
+- Counts are 16-bit, offsets and sizes are 32-bit with the high word in `R1`.
+- Failed calls return `-1`.
+- Each trap sets the condition codes. Negative when the call failed, positive
+  when it succeeded. So any syscall can be followed by `brn fail`.
+- `open` modes: `0` read, `1` create or truncate, `2` create or append.
+- `seek` whence values: `0` set, `1` current, `2` end.
