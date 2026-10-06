@@ -212,13 +212,9 @@ void lc3_halt(lcc_trap_ctx *ctx)
 
 void lc3_putn(lcc_trap_ctx *ctx)
 {
-	if (!at_newline)
-	{
-		(void)putchar('\n');
-		at_newline = 1;
-	}
-	(void)printf("%u\n", (unsigned int)ctx->reg[0]);
+	(void)printf("%u", (unsigned int)ctx->reg[0]);
 	(void)fflush(stdout);
+	at_newline = 0;
 }
 
 void lc3_reg(lcc_trap_ctx *ctx)

@@ -25,8 +25,8 @@ const examples = [_]Example{
     .{ .name = "pyramid", .exit_code = 0, .stdout = "Pyramid height (0-9): 1\n*\n" },
     .{ .name = "subroutines", .exit_code = 50 },
     .{ .name = "uppercase", .exit_code = 0, .stdout = "1\n" },
-    .{ .name = "subsubroutine", .exit_code = 0, .stdout = "12289\n12294\n12294\n12289\n" },
-    .{ .name = "debug", .exit_code = 0, .stdout = "1\n3\n6\n10\n15\n21\n28\n36\n45\n55\n66\n" },
+    .{ .name = "subsubroutine", .exit_code = 0, .stdout = "12289122941229412289\n" },
+    .{ .name = "debug", .exit_code = 0, .stdout = "1361015212836455566\n" },
     .{
         .name = "box",
         .exit_code = 0,
@@ -589,11 +589,14 @@ test "time and sleep set runs" {
         \\    st r0, tlo
         \\    add r0, r1, #0
         \\    putn
+        \\    ld r0, nl
+        \\    out
         \\    ld r0, tlo
         \\    putn
         \\    halt
         \\
         \\tlo .FILL #0
+        \\nl  .FILL #10
         \\
         \\.END
         \\
@@ -686,13 +689,18 @@ test "seed and rand set runs" {
         \\    seed
         \\    rand
         \\    putn
+        \\    ld r0, nl
+        \\    out
         \\    rand
         \\    putn
+        \\    ld r0, nl
+        \\    out
         \\    rand
         \\    putn
         \\    halt
         \\
         \\sval .FILL #42
+        \\nl  .FILL #10
         \\
         \\.END
         \\
