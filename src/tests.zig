@@ -495,17 +495,6 @@ test "multiple trap sets load together" {
         \\}
         \\
     );
-    try writeFixture(io, test_dir ++ "/multi.asm",
-        \\.ORIG x3000
-        \\
-        \\    alpha
-        \\    putn
-        \\    halt
-        \\
-        \\.END
-        \\
-    );
-
     // beta is optional; only alpha is needed for behaviour
     try writeFixture(io, test_dir ++ "/beta.c", "LCC_TRAP(0x31, beta) {}\n");
 
@@ -519,9 +508,9 @@ test "multiple trap sets load together" {
         test_dir ++ "/alpha.c",
         "-traps",
         test_dir ++ "/beta.c",
-        test_dir ++ "/multi.asm",
+        "examples/multi.asm",
     });
-    defer cleanup(io, .{ .files = &.{ out, test_dir ++ "/alpha.c", test_dir ++ "/beta.c", test_dir ++ "/multi.asm" } });
+    defer cleanup(io, .{ .files = &.{ out, test_dir ++ "/alpha.c", test_dir ++ "/beta.c" } });
     try std.testing.expectEqual(@as(u8, 0), compile.code);
 
     const run = try execWithStdin(alloc, io, &.{out}, "1\n");
@@ -582,30 +571,11 @@ test "time and sleep set runs" {
     const alloc = arena.allocator();
 
     // print the current epoch as two words: high then low
-    try writeFixture(io, test_dir ++ "/time.asm",
-        \\.ORIG x3000
-        \\
-        \\    time
-        \\    st r0, tlo
-        \\    add r0, r1, #0
-        \\    putn
-        \\    ld r0, nl
-        \\    out
-        \\    ld r0, tlo
-        \\    putn
-        \\    halt
-        \\
-        \\tlo .FILL #0
-        \\nl  .FILL #10
-        \\
-        \\.END
-        \\
-    );
-    defer cleanup(io, .{ .files = &.{ test_dir ++ "/time.asm", test_dir ++ "/time_out" } });
+    defer cleanup(io, .{ .files = &.{test_dir ++ "/time_out"} });
 
     var time_buf: [128]u8 = undefined;
     const time_out = try outPath(&time_buf, "time_out");
-    const compile = try runLcc(alloc, io, &.{ lcc_exe, "-o", time_out, "-traps", "src/runtime/sets/time.cpp", test_dir ++ "/time.asm" });
+    const compile = try runLcc(alloc, io, &.{ lcc_exe, "-o", time_out, "-traps", "src/runtime/sets/time.cpp", "examples/time.asm" });
     try std.testing.expectEqual(@as(u8, 0), compile.code);
 
     const run = try execWithStdin(alloc, io, &.{time_out}, "1\n");
@@ -619,23 +589,11 @@ test "time and sleep set runs" {
     try std.testing.expect(@abs(now - epoch) < 300);
 
     // sleep for 300ms; the delay must be visible in wall time
-    try writeFixture(io, test_dir ++ "/sleep.asm",
-        \\.ORIG x3000
-        \\
-        \\    ld r0, ms
-        \\    sleep
-        \\    halt
-        \\
-        \\ms  .FILL #300
-        \\
-        \\.END
-        \\
-    );
-    defer cleanup(io, .{ .files = &.{ test_dir ++ "/sleep.asm", test_dir ++ "/sleep_out" } });
+    defer cleanup(io, .{ .files = &.{test_dir ++ "/sleep_out"} });
 
     var sleep_buf: [128]u8 = undefined;
     const sleep_out = try outPath(&sleep_buf, "sleep_out");
-    const compile2 = try runLcc(alloc, io, &.{ lcc_exe, "-o", sleep_out, "-traps", "src/runtime/sets/time.cpp", test_dir ++ "/sleep.asm" });
+    const compile2 = try runLcc(alloc, io, &.{ lcc_exe, "-o", sleep_out, "-traps", "src/runtime/sets/time.cpp", "examples/sleep.asm" });
     try std.testing.expectEqual(@as(u8, 0), compile2.code);
 
     const start = std.Io.Timestamp.now(io, .real);
@@ -675,34 +633,11 @@ test "seed and rand set runs" {
         },
     }
 
-    try writeFixture(io, test_dir ++ "/rand.asm",
-        \\.ORIG x3000
-        \\
-        \\    ld r0, sval
-        \\    seed
-        \\    rand
-        \\    putn
-        \\    ld r0, nl
-        \\    out
-        \\    rand
-        \\    putn
-        \\    ld r0, nl
-        \\    out
-        \\    rand
-        \\    putn
-        \\    halt
-        \\
-        \\sval .FILL #42
-        \\nl  .FILL #10
-        \\
-        \\.END
-        \\
-    );
-    defer cleanup(io, .{ .files = &.{ test_dir ++ "/rand.asm", obj, test_dir ++ "/rand_out" } });
+    defer cleanup(io, .{ .files = &.{ obj, test_dir ++ "/rand_out" } });
 
     var out_buf: [128]u8 = undefined;
     const out = try outPath(&out_buf, "rand_out");
-    const compile = try runLcc(alloc, io, &.{ lcc_exe, "-o", out, "-traps", "src/runtime/sets/rand.c", test_dir ++ "/rand.asm" });
+    const compile = try runLcc(alloc, io, &.{ lcc_exe, "-o", out, "-traps", "src/runtime/sets/rand.c", "examples/rand.asm" });
     try std.testing.expectEqual(@as(u8, 0), compile.code);
 
     const run = try execWithStdin(alloc, io, &.{out}, "1\n");
@@ -741,20 +676,11 @@ test "C++ trap sets link the C++ runtime automatically" {
         \\    ctx->reg[0] = (unsigned short)word.size();
         \\}
     );
-    try writeFixture(io, test_dir ++ "/cxx.asm",
-        \\.ORIG x3000
-        \\
-        \\    cxxhello
-        \\    halt
-        \\
-        \\.END
-        \\
-    );
-    defer cleanup(io, .{ .files = &.{ test_dir ++ "/cxxset.cpp", test_dir ++ "/cxx.asm", test_dir ++ "/cxx.out" } });
+    defer cleanup(io, .{ .files = &.{ test_dir ++ "/cxxset.cpp", test_dir ++ "/cxx.out" } });
 
     var out_buf: [128]u8 = undefined;
     const out = try outPath(&out_buf, "cxx.out");
-    const result = try runLcc(alloc, io, &.{ lcc_exe, "-traps", test_dir ++ "/cxxset.cpp", "-o", out, test_dir ++ "/cxx.asm" });
+    const result = try runLcc(alloc, io, &.{ lcc_exe, "-traps", test_dir ++ "/cxxset.cpp", "-o", out, "examples/cxx.asm" });
     try std.testing.expectEqual(@as(u8, 0), result.code);
 }
 
@@ -833,18 +759,8 @@ test "trap sets work with dynamic linking" {
         \\}
         \\
     );
-    try writeFixture(io, test_dir ++ "/dyn.asm",
-        \\.ORIG x3000
-        \\
-        \\    dynhello
-        \\    halt
-        \\
-        \\.END
-        \\
-    );
     defer cleanup(io, .{ .files = &.{
         test_dir ++ "/dynset.cpp",
-        test_dir ++ "/dyn.asm",
         test_dir ++ "/dyn_set",
         "liblc3.dylib",
         "liblc3.so",
@@ -852,7 +768,7 @@ test "trap sets work with dynamic linking" {
 
     var out_buf: [128]u8 = undefined;
     const out = try outPath(&out_buf, "dyn_set");
-    const compile = try runLcc(alloc, io, &.{ lcc_exe, "-o", out, "-dynamic", "-traps", test_dir ++ "/dynset.cpp", test_dir ++ "/dyn.asm" });
+    const compile = try runLcc(alloc, io, &.{ lcc_exe, "-o", out, "-dynamic", "-traps", test_dir ++ "/dynset.cpp", "examples/dyn.asm" });
     try std.testing.expectEqual(@as(u8, 0), compile.code);
 
     const run = try execWithStdin(alloc, io, &.{out}, "1\n");
