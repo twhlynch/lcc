@@ -1,5 +1,5 @@
 ; write a file, print its size, read it back, seek into it, then delete it
-; lcc examples/syscalls.asm -traps src/runtime/sets/syscalls.c
+; lcc examples/syscalls.asm -traps syscalls
 
 .ORIG x3000
 

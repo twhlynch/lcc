@@ -15,7 +15,7 @@ pub const usage =
     \\  -L<dir>                 Directory to search for liblc3
     \\  -generate-liblc3        Generate liblc3 shared library
     \\
-    \\  -traps <set>            Load trap sets (repeatable)
+    \\  -traps <name|file>      Load a set: bundled name or source file (repeatable)
     \\  -generate-traps-header  Generate lcc_trap.h
     \\
     \\  -v, --version           Print version information

@@ -50,7 +50,7 @@ standard. See [docs/behaviour.md](docs/behaviour.md).
 | `-dynamic`               | Link against liblc3 dynamically           |
 | `-L<dir>`                | Directory to search for liblc3            |
 | `-generate-liblc3`       | Generate liblc3 shared library            |
-| `-traps <set>`           | Load trap sets (repeatable)               |
+| `-traps <name\|file>`    | Load a set by name or source file         |
 | `-generate-traps-header` | Generate lcc_trap.h                       |
 | `-v`, `--version`        | Print version information                 |
 | `-h`, `--help`           | Print usage help                          |
@@ -125,12 +125,13 @@ Trap semantics follow ELK's emulator. `putn` and `reg` are debug extensions.
 
 ### Trap sets
 
-Extra trap extensions or 'sets' can be loaded with `-traps`, as paths to C/C++
-source files. Implementations can also be prebuilt static libraries in any
-language, paired with a small declarations stub:
+Extra trap extensions or 'sets' can be loaded with `-traps`: the bundled sets
+(`minecraft`, `syscalls`, `terminal`, `time`) by name, any other set as a path
+to a C/C++ source file. Implementations can also be prebuilt static libraries in
+any language, paired with a small declarations stub:
 
 ```sh
-lcc program.asm -traps ./src/runtime/sets/minecraft.cpp
+lcc program.asm -traps terminal -traps minecraft
 ```
 
 See [docs/trap_sets.md](docs/trap_sets.md) for full usage.

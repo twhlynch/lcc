@@ -310,14 +310,21 @@ pub fn compileAndLink(
         try writeFile(io, scratch.rt, runtime_source);
         try sources.append(gpa, scratch.rt);
     }
+    // file sets compile in place; bundled sets are appended below from
+    // their scratch copy
     for (table.sets.items) |set| {
+        if (set.bundled) continue;
         try sources.append(gpa, set.path);
     }
 
     // the header is force-included while compiling the runtime and sets;
     // function scope so a later link failure still removes it
     const will_generate = dynamic and lib_path == null;
-    const write_header = sources.items.len > 0 or will_generate;
+    var bundled_count: usize = 0;
+    for (table.sets.items) |set| {
+        if (set.bundled) bundled_count += 1;
+    }
+    const write_header = sources.items.len > 0 or bundled_count > 0 or will_generate;
     const hdr_dir = std.fs.path.dirname(scratch.hdr) orelse ".";
     errdefer if (write_header) {
         std.Io.Dir.cwd().deleteTree(io, hdr_dir) catch {};
@@ -326,6 +333,28 @@ pub fn compileAndLink(
         try std.Io.Dir.cwd().createDirPath(io, hdr_dir);
         try writeFile(io, scratch.hdr, trapsets.trap_header);
     }
+
+    // bundled sets compile from a scratch copy inside the trap directory
+    // (their name has no extension and no directory to read from), and
+    // the directory is removed together with the header after the link
+    var bundled_paths: std.ArrayList([]const u8) = .empty;
+    defer {
+        for (bundled_paths.items) |path| gpa.free(path);
+        bundled_paths.deinit(gpa);
+    }
+    for (table.sets.items) |set| {
+        if (!set.bundled) continue;
+        const name = try std.fmt.allocPrint(gpa, "{s}{s}", .{ set.path, set.ext });
+        defer gpa.free(name);
+        const path = try std.fs.path.join(gpa, &.{ hdr_dir, name });
+        bundled_paths.append(gpa, path) catch |err| {
+            gpa.free(path);
+            return err;
+        };
+        try writeFile(io, path, set.source);
+        try sources.append(gpa, path);
+    }
+
     const include_header: ?[]const u8 = if (write_header) scratch.hdr else null;
 
     if (dynamic) {

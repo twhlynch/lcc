@@ -8,6 +8,14 @@ lcc program.asm -traps mytraps.c         # one set
 lcc program.asm -traps a.c -traps b.c    # one flag per set
 ```
 
+A few sets are compiled into lcc itself and can be selected by name. The bundled
+sets are `minecraft`, `syscalls`, `terminal`, and `time`. Any other value is
+read as a `.c`/`.cpp` source.
+
+```sh
+lcc program.asm -traps terminal -traps time
+```
+
 ## The trap ABI
 
 Every handler has the same signature, defined in `src/runtime/lcc_trap.h`:
@@ -169,7 +177,7 @@ standard vector under a _different_ alias throws an error.
 `/usr/local`.
 
 ```sh
-lcc program.asm -traps ./src/runtime/sets/minecraft.cpp
+lcc program.asm -traps minecraft
 ```
 
 | Trap   | Vector | Description                         |
@@ -187,7 +195,7 @@ lcc program.asm -traps ./src/runtime/sets/minecraft.cpp
 host file API:
 
 ```sh
-lcc program.asm -traps ./src/runtime/sets/syscalls.c
+lcc program.asm -traps syscalls
 ```
 
 | Trap     | Vector | Input                                | Output                   |
@@ -214,11 +222,11 @@ Conventions:
 
 ## The terminal set
 
-`src/runtime/sets/terminal.c` provides traps `x40`-`x46` for full screen
+The `terminal` set provides traps `x40`-`x46` for full screen
 programs: escape sequence output, key decoding, and a non-blocking read.
 
 ```sh
-lcc program.asm -traps ./src/runtime/sets/terminal.c
+lcc program.asm -traps terminal
 ```
 
 | Trap    | Vector | Input                           | Output                               |

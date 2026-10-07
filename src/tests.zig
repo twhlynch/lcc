@@ -655,9 +655,23 @@ test "trap set conflicts are rejected" {
     try writeFixture(io, test_dir ++ "/badalias.c", "LCC_TRAP(0x30, Bad1) {}\n");
     {
         const result = try runLcc(alloc, io, &.{ lcc_exe, "-traps", test_dir ++ "/badalias.c", "examples/hello.asm" });
-        defer cleanup(io, .{ .files = &.{test_dir ++ "/badalias.c"} });
+        defer cleanup(io, .{ .files = &.{ test_dir ++ "/badalias.c" } });
         try std.testing.expectEqual(@as(u8, 2), result.code);
         try std.testing.expect(std.mem.indexOf(u8, result.stderr, "invalid trap alias") != null);
+    }
+
+    // an unknown set name reports the bundled ones
+    {
+        const result = try runLcc(alloc, io, &.{ lcc_exe, "-traps", "nosuchset", "examples/hello.asm" });
+        try std.testing.expectEqual(@as(u8, 2), result.code);
+        try std.testing.expect(std.mem.indexOf(u8, result.stderr, "bundled: minecraft, syscalls, terminal, time") != null);
+    }
+
+    // the same bundled set cannot be loaded twice
+    {
+        const result = try runLcc(alloc, io, &.{ lcc_exe, "-traps", "terminal", "-traps", "terminal", "examples/hello.asm" });
+        try std.testing.expectEqual(@as(u8, 2), result.code);
+        try std.testing.expect(std.mem.indexOf(u8, result.stderr, "loaded twice") != null);
     }
 }
 
@@ -795,7 +809,7 @@ test "terminal set runs" {
 
     var out_buf: [128]u8 = undefined;
     const out = try outPath(&out_buf, "term.out");
-    const compile = try runLcc(alloc, io, &.{ lcc_exe, "-o", out, "-traps", "src/runtime/sets/terminal.c", "examples/term.asm" });
+    const compile = try runLcc(alloc, io, &.{ lcc_exe, "-o", out, "-traps", "terminal", "examples/term.asm" });
     defer cleanup(io, .{ .files = &.{out} });
     try std.testing.expectEqual(@as(u8, 0), compile.code);
 

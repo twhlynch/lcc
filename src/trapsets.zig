@@ -14,14 +14,50 @@ pub const trap_header_name = "lcc_trap.h";
 /// a C identifier or linker flag; null terminated for LLVM and spawn
 pub const Symbol = [:0]const u8;
 
+/// one trap set source compiled into the binary
+const BundledSet = struct {
+    name: []const u8,
+    ext: []const u8,
+    source: [:0]const u8,
+};
+
+/// trap sets shipped inside lcc; -traps accepts their names alongside
+/// file paths, and a name wins over a same-named file. rand is left out:
+/// its LCC_LINK names a sibling object file the compiler does not ship.
+const bundled = [_]BundledSet{
+    .{ .name = "minecraft", .ext = ".cpp", .source = @embedFile("runtime/sets/minecraft.cpp") },
+    .{ .name = "syscalls", .ext = ".c", .source = @embedFile("runtime/sets/syscalls.c") },
+    .{ .name = "terminal", .ext = ".c", .source = @embedFile("runtime/sets/terminal.c") },
+    .{ .name = "time", .ext = ".cpp", .source = @embedFile("runtime/sets/time.cpp") },
+};
+
+/// the bundled set matching name, or null when it is not one
+fn findBundled(name: []const u8) ?*const BundledSet {
+    for (&bundled) |*entry| {
+        if (std.mem.eql(u8, entry.name, name)) return entry;
+    }
+    return null;
+}
+
+/// comma separated bundled names, for diagnostics
+fn bundledNameList(gpa: std.mem.Allocator) LoadError![]const u8 {
+    var names: [bundled.len][]const u8 = undefined;
+    for (&bundled, 0..) |*entry, i| names[i] = entry.name;
+    return std.mem.join(gpa, ", ", &names);
+}
+
 /// one loaded trap set
 pub const Set = struct {
-    /// source file path, also its identity on the command line
+    /// source file path, also its identity on the command line; for a
+    /// bundled set this is the name that selected it
     path: []const u8,
     /// source text; decl aliases point into it, so it stays alive until deinit
     source: []const u8,
     /// source file extension (.c, .cpp, ...); used to detect C++ sets
     ext: []const u8,
+    /// true when selected by bundled name: the compiler writes source
+    /// to a scratch file instead of compiling it in place
+    bundled: bool = false,
     /// declared handlers, in source order
     decls: std.ArrayList(Decl) = .empty,
     /// flags from LCC_LINK
@@ -177,11 +213,25 @@ pub fn load(gpa: std.mem.Allocator, io: std.Io, specs: []const []const u8) LoadE
     return table;
 }
 
-/// read a source file path and scan it for declarations
+/// load a -traps spec: a bundled set name first, then a source file path
 fn loadSet(gpa: std.mem.Allocator, io: std.Io, spec: []const u8) LoadError!Set {
+    if (findBundled(spec)) |entry| {
+        const source = try gpa.dupe(u8, entry.source);
+        var set: Set = .{ .path = spec, .source = source, .ext = entry.ext, .bundled = true };
+        errdefer set.deinit(gpa);
+        try scanDecls(gpa, &set);
+        return set;
+    }
+
     const ext = std.fs.path.extension(spec);
     if (!validSetExt(ext)) {
-        std.log.err("trap set '{s}': expected a .c or .cpp source file", .{spec});
+        if (ext.len == 0) {
+            const names = try bundledNameList(gpa);
+            defer gpa.free(names);
+            std.log.err("trap set '{s}': no bundled set named it (bundled: {s}) and it is not a .c or .cpp source file", .{ spec, names });
+        } else {
+            std.log.err("trap set '{s}': expected a .c or .cpp source file", .{spec});
+        }
         return error.InvalidTrapSet;
     }
 
@@ -195,7 +245,13 @@ fn loadSet(gpa: std.mem.Allocator, io: std.Io, spec: []const u8) LoadError!Set {
 
     var set: Set = .{ .path = spec, .source = source, .ext = ext };
     errdefer set.deinit(gpa);
+    try scanDecls(gpa, &set);
+    return set;
+}
 
+/// scan set.source for LCC_TRAP and LCC_LINK declarations
+fn scanDecls(gpa: std.mem.Allocator, set: *Set) LoadError!void {
+    const source = set.source;
     var line: usize = 1;
     var i: usize = 0;
     while (i < source.len) {
@@ -223,14 +279,12 @@ fn loadSet(gpa: std.mem.Allocator, io: std.Io, spec: []const u8) LoadError!Set {
             while (i < source.len and isIdentCont(source[i])) i += 1;
             const ident = source[start..i];
             if (std.mem.eql(u8, ident, "LCC_TRAP") or std.mem.eql(u8, ident, "LCC_LINK")) {
-                i = try scanMacro(gpa, &set, ident, source, i, &line);
+                i = try scanMacro(gpa, set, ident, source, i, &line);
             }
         } else {
             i += 1;
         }
     }
-
-    return set;
 }
 
 fn validSetExt(ext: []const u8) bool {
@@ -489,4 +543,21 @@ fn skipQuoted(source: []const u8, start: usize) usize {
         if (c == '\n') return i;
     }
     return i;
+}
+
+test "bundled sets load by name" {
+    var table = try load(std.testing.allocator, std.testing.io, &.{ "terminal", "time" });
+    defer table.deinit(std.testing.allocator);
+
+    try std.testing.expectEqualStrings("lcc_trap_key", table.symbols[0x45].?);
+    try std.testing.expectEqualStrings("lcc_trap_time", table.symbols[0x30].?);
+    try std.testing.expect(table.sets.items[0].bundled);
+    try std.testing.expect(table.sets.items[1].bundled);
+
+    // the c++ set brings the platform c++ runtime flag
+    var found_cxx = false;
+    for (table.link_flags.items) |flag| {
+        if (std.mem.eql(u8, flag, cxxRuntimeFlag())) found_cxx = true;
+    }
+    try std.testing.expect(found_cxx);
 }
