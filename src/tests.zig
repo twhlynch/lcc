@@ -655,7 +655,7 @@ test "trap set conflicts are rejected" {
     try writeFixture(io, test_dir ++ "/badalias.c", "LCC_TRAP(0x30, Bad1) {}\n");
     {
         const result = try runLcc(alloc, io, &.{ lcc_exe, "-traps", test_dir ++ "/badalias.c", "examples/hello.asm" });
-        defer cleanup(io, .{ .files = &.{ test_dir ++ "/badalias.c" } });
+        defer cleanup(io, .{ .files = &.{test_dir ++ "/badalias.c"} });
         try std.testing.expectEqual(@as(u8, 2), result.code);
         try std.testing.expect(std.mem.indexOf(u8, result.stderr, "invalid trap alias") != null);
     }
