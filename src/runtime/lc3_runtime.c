@@ -14,6 +14,7 @@
 #if defined(__unix__) || defined(__APPLE__)
 #define LCC_POSIX 1
 #include <errno.h>
+#include <signal.h>
 #include <termios.h>
 #include <unistd.h>
 #endif
@@ -23,6 +24,7 @@
 #define REGISTER_COUNT 8
 #define BYTE_MASK 0xFF
 #define ASCII_LIMIT 128
+#define SIGNAL_EXIT_BASE 128
 
 /* tracks whether the last output byte was a newline */
 static int at_newline = 1;
@@ -49,6 +51,7 @@ static struct termios saved_termios;
 static int tty_restore_pending = 0;
 
 static void restore_terminal(void);
+static void interrupted(int sig);
 #endif
 
 /*
@@ -73,6 +76,10 @@ __attribute__((constructor)) static void runtime_init(void)
 			}
 		}
 	}
+
+	// tidy up when a signal ends the program
+	(void)signal(SIGINT, interrupted);
+	(void)signal(SIGTERM, interrupted);
 #endif
 }
 
@@ -84,6 +91,12 @@ static void restore_terminal(void)
 		(void)tcsetattr(STDIN_FILENO, TCSANOW, &saved_termios);
 		tty_restore_pending = 0;
 	}
+}
+
+static void interrupted(int sig)
+{
+	restore_terminal();
+	_exit(SIGNAL_EXIT_BASE + sig);
 }
 #endif
 
