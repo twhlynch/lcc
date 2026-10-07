@@ -211,3 +211,32 @@ Conventions:
   when it succeeded. So any syscall can be followed by `brn fail`.
 - `open` modes: `0` read, `1` create or truncate, `2` create or append.
 - `seek` whence values: `0` set, `1` current, `2` end.
+
+## The terminal set
+
+`src/runtime/sets/terminal.c` provides traps `x40`-`x45` for full screen
+programs: escape sequence output and key decoding.
+
+```sh
+lcc program.asm -traps ./src/runtime/sets/terminal.c
+```
+
+| Trap    | Vector | Input                           | Output                    |
+| ------- | ------ | ------------------------------- | ------------------------- |
+| `clear` | `x40`  | -                               | Clear the screen          |
+| `home`  | `x41`  | -                               | Cursor to row 1, column 1 |
+| `goto`  | `x42`  | R0 = row, R1 = column (1-based) | Move the cursor           |
+| `alt`   | `x43`  | R0 = 0 enter, 1 leave           | Alternate screen buffer   |
+| `cur`   | `x44`  | R0 = 0 hide, 1 show             | Cursor visibility         |
+| `key`   | `x45`  | -                               | R0 = next key code        |
+
+Key codes:
+
+- Bytes are returned as read, except Enter is normalised to `x0A`
+  (terminals send CR or LF) and Backspace to `x08` (BS or DEL).
+- `x1B` is Escape. It is reported once the following byte arrives unless
+  that byte starts a sequence, it is kept for the next read.
+- `x0100`-`x0103` are the arrow keys (`ESC [ A`-`D`), `x0104` is Delete
+  (`ESC [ 3 ~`). Unknown sequences are swallowed and the next key is read.
+- `key` reads through `getc`, so command line arguments arrive before
+  stdin and end of input ends the program, exactly like `getc`.
