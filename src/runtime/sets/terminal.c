@@ -1,5 +1,5 @@
 /*
- * terminal trap set for lcc (x40-x45)
+ * terminal trap set for lcc (x40-x46)
  *
  * Screen control and key decoding for full screen programs. Screen traps
  * emit the usual ANSI escape sequences. Key codes returned by `key`:
@@ -18,15 +18,26 @@
  * read through the runtime's getc, so command line arguments arrive
  * before stdin and end of input ends the program, exactly like getc.
  *
+ * poll is key's non-blocking equivalent, it returns at once with the next
+ * byte, -1 when stdin has none, and 0 at end of input instead of exiting,
+ * so a program can run between keypresses. It should not be mixed with
+ * key/getc, which do not share its buffer.
+ *
  *   x40 clear  -                        clear the screen
  *   x41 home   -                        cursor to row 1, column 1
  *   x42 goto   R0 = row, R1 = column    cursor to a 1-based cell
  *   x43 alt    R0 = 0 enter, 1 leave    alternate screen buffer
  *   x44 cur    R0 = 0 hide, 1 show      cursor visibility
  *   x45 key    -                        R0 = next key code
+ *   x46 poll   -                        R0 = next byte, -1 none, 0 EOF
  */
 
+#include <sys/select.h>
+#include <sys/time.h>
+
 #include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
 
 #include "lcc_trap.h"
 
@@ -56,6 +67,25 @@ static void sequence(const char *text)
 {
 	(void)fputs(text, stdout);
 	(void)fflush(stdout);
+}
+
+/* whether the exit restore for the screen has been registered */
+static int restore_armed = 0;
+
+/* shows the cursor and leaves the alternate buffer again */
+static void restore_screen(void)
+{
+	sequence("\x1b[?25h\x1b[?1049l");
+}
+
+/* arms that restore the first time the program touches the screen */
+static void arm_restore_screen(void)
+{
+	if (!restore_armed)
+	{
+		restore_armed = 1;
+		(void)atexit(restore_screen);
+	}
 }
 
 /* next byte from the read ahead slot or the runtime's input stream */
@@ -147,11 +177,13 @@ LCC_TRAP(0x42, goto)
 
 LCC_TRAP(0x43, alt)
 {
+	arm_restore_screen();
 	sequence(ctx->reg[0] == 0 ? "\x1b[?1049h" : "\x1b[?1049l");
 }
 
 LCC_TRAP(0x44, cur)
 {
+	arm_restore_screen();
 	sequence(ctx->reg[0] == 0 ? "\x1b[?25l" : "\x1b[?25h");
 }
 
@@ -185,4 +217,34 @@ LCC_TRAP(0x45, key)
 		ctx->reg[0] = ESC_CHAR;
 		return;
 	}
+}
+
+LCC_TRAP(0x46, poll)
+{
+	// a byte key read ahead is already in hand, hand it over
+	if (pending_byte >= 0)
+	{
+		ctx->reg[0] = (unsigned short)normalize(pending_byte);
+		pending_byte = -1;
+		return;
+	}
+
+	// otherwise peek at stdin without waiting
+	fd_set ready;
+	struct timeval timeout = {0, 0};
+	FD_ZERO(&ready);
+	FD_SET(STDIN_FILENO, &ready);
+	if (select(STDIN_FILENO + 1, &ready, NULL, NULL, &timeout) <= 0)
+	{
+		ctx->reg[0] = (unsigned short)-1;
+		return;
+	}
+
+	unsigned char byte = 0;
+	if (read(STDIN_FILENO, &byte, 1) <= 0)
+	{
+		ctx->reg[0] = 0; // end of input, return 0
+		return;
+	}
+	ctx->reg[0] = (unsigned short)normalize(byte);
 }

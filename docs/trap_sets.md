@@ -214,21 +214,22 @@ Conventions:
 
 ## The terminal set
 
-`src/runtime/sets/terminal.c` provides traps `x40`-`x45` for full screen
-programs: escape sequence output and key decoding.
+`src/runtime/sets/terminal.c` provides traps `x40`-`x46` for full screen
+programs: escape sequence output, key decoding, and a non-blocking read.
 
 ```sh
 lcc program.asm -traps ./src/runtime/sets/terminal.c
 ```
 
-| Trap    | Vector | Input                           | Output                    |
-| ------- | ------ | ------------------------------- | ------------------------- |
-| `clear` | `x40`  | -                               | Clear the screen          |
-| `home`  | `x41`  | -                               | Cursor to row 1, column 1 |
-| `goto`  | `x42`  | R0 = row, R1 = column (1-based) | Move the cursor           |
-| `alt`   | `x43`  | R0 = 0 enter, 1 leave           | Alternate screen buffer   |
-| `cur`   | `x44`  | R0 = 0 hide, 1 show             | Cursor visibility         |
-| `key`   | `x45`  | -                               | R0 = next key code        |
+| Trap    | Vector | Input                           | Output                               |
+| ------- | ------ | ------------------------------- | ------------------------------------ |
+| `clear` | `x40`  | -                               | Clear the screen                     |
+| `home`  | `x41`  | -                               | Cursor to row 1, column 1            |
+| `goto`  | `x42`  | R0 = row, R1 = column (1-based) | Move the cursor                      |
+| `alt`   | `x43`  | R0 = 0 enter, 1 leave           | Alternate screen buffer              |
+| `cur`   | `x44`  | R0 = 0 hide, 1 show             | Cursor visibility                    |
+| `key`   | `x45`  | -                               | R0 = next key code                   |
+| `poll`  | `x46`  | -                               | R0 = next byte, -1 if none, 0 at end |
 
 Key codes:
 
@@ -240,3 +241,8 @@ Key codes:
   (`ESC [ 3 ~`). Unknown sequences are swallowed and the next key is read.
 - `key` reads through `getc`, so command line arguments arrive before
   stdin and end of input ends the program, exactly like `getc`.
+
+`poll` is `key`'s non-blocking equivalent, it returns at once with the
+next byte, `-1` when stdin has none, and `0` at end of input instead of
+exiting, so a program can run between keypresses. It should not be
+mixed with `key`/`getc`, which do not share its buffer.

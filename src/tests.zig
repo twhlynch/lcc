@@ -802,8 +802,10 @@ test "terminal set runs" {
     // one arrow key, then Escape confirmed by a following plain byte
     const run = try execWithStdin(alloc, io, &.{out}, "\x1b[A\x1bz");
     try std.testing.expectEqual(@as(u8, 0), run.exit);
+    // the set arms an exit restore on the first cur/alt, so the
+    // cursor and alternate screen are put back after the output
     try std.testing.expectEqualStrings(
-        "\x1b[2J\x1b[1;1H\x1b[2;3H\x1b[?25l\x1b[?25h25627\n",
+        "\x1b[2J\x1b[1;1H\x1b[2;3H\x1b[?25l\x1b[?25h25627\x1b[?25h\x1b[?1049l\n",
         run.stdout,
     );
 }
