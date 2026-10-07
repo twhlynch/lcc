@@ -785,6 +785,29 @@ test "syscall set runs" {
     }
 }
 
+test "terminal set runs" {
+    requireLcc(std.testing.io);
+    try ensureTestDir(std.testing.io);
+    const io = std.testing.io;
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var out_buf: [128]u8 = undefined;
+    const out = try outPath(&out_buf, "term.out");
+    const compile = try runLcc(alloc, io, &.{ lcc_exe, "-o", out, "-traps", "src/runtime/sets/terminal.c", "examples/term.asm" });
+    defer cleanup(io, .{ .files = &.{out} });
+    try std.testing.expectEqual(@as(u8, 0), compile.code);
+
+    // one arrow key, then Escape confirmed by a following plain byte
+    const run = try execWithStdin(alloc, io, &.{out}, "\x1b[A\x1bz");
+    try std.testing.expectEqual(@as(u8, 0), run.exit);
+    try std.testing.expectEqualStrings(
+        "\x1b[2J\x1b[1;1H\x1b[2;3H\x1b[?25l\x1b[?25h25627\n",
+        run.stdout,
+    );
+}
+
 test "C++ trap sets link the C++ runtime automatically" {
     requireLcc(std.testing.io);
     try ensureTestDir(std.testing.io);
