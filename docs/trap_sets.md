@@ -1,11 +1,13 @@
 # Writing trap sets
 
 A trap set (or extension) is a C or C++ source file that provides native
-implementations for LC-3 trap vectors. Sets are loaded per build with `-traps`.
+implementations for LC-3 trap vectors. Sets are loaded per build with `-traps`,
+or `-T`.
 
 ```sh
 lcc program.asm -traps mytraps.c         # one set
 lcc program.asm -traps a.c -traps b.c    # one flag per set
+lcc program.asm -T terminal              # shorthand for -traps
 ```
 
 A few sets are compiled into lcc itself and can be selected by name. The bundled

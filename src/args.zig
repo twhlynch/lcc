@@ -15,7 +15,7 @@ pub const usage =
     \\  -L<dir>                 Directory to search for liblc3
     \\  -generate-liblc3        Generate liblc3 shared library
     \\
-    \\  -traps <name|file>      Load a set: bundled name or source file (repeatable)
+    \\  -T, -traps <name|file>  Load a set: bundled name or source file (repeatable)
     \\  -generate-traps-header  Generate lcc_trap.h
     \\
     \\  -v, --version           Print version information
@@ -203,7 +203,38 @@ fn looksLikeFlag(arg: []const u8) bool {
 const TrapScan = struct {
     specs: std.ArrayList([]const u8),
     rest: std.ArrayList([]const u8),
+    /// the spelling the user typed, kept for diagnostics; -traps when no
+    /// flag was given
+    flag: []const u8 = "-traps",
 };
+
+fn isTrapsFlag(arg: []const u8) bool {
+    return std.mem.eql(u8, arg, "-traps") or std.mem.eql(u8, arg, "-T");
+}
+
+/// diagnostics for one spelling of the traps flag. errmsg is never freed
+/// by the cli layer and unit tests pass the testing allocator through, so
+/// every message is a static string.
+const TrapsMessages = struct {
+    missing: []const u8,
+    empty: []const u8,
+    header: []const u8,
+    liblc3: []const u8,
+};
+
+fn trapsMessages(flag: []const u8) TrapsMessages {
+    return if (std.mem.eql(u8, flag, "-T")) .{
+        .missing = "missing value for -T",
+        .empty = "empty trap set path in -T",
+        .header = "cannot combine -T with -generate-traps-header",
+        .liblc3 = "cannot combine -T with -generate-liblc3",
+    } else .{
+        .missing = "missing value for -traps",
+        .empty = "empty trap set path in -traps",
+        .header = "cannot combine -traps with -generate-traps-header",
+        .liblc3 = "cannot combine -traps with -generate-liblc3",
+    };
+}
 
 /// pulls every `-traps <value>` pair out of the argument list so zilc
 /// never sees the flag (it would reject it as unknown, and repeated value
@@ -220,6 +251,7 @@ fn extractTrapSpecs(
     errdefer specs.deinit(arena);
     var rest: std.ArrayList([]const u8) = .empty;
     errdefer rest.deinit(arena);
+    var flag: []const u8 = "-traps";
 
     var i: usize = 0;
     while (i < args.len) : (i += 1) {
@@ -228,23 +260,24 @@ fn extractTrapSpecs(
             try rest.appendSlice(arena, args[i..]);
             break;
         }
-        if (std.mem.eql(u8, arg, "-traps")) {
+        if (isTrapsFlag(arg)) {
             if (i + 1 >= args.len or std.mem.eql(u8, args[i + 1], "--") or looksLikeFlag(args[i + 1])) {
-                errmsg.* = "missing value for -traps";
+                errmsg.* = trapsMessages(arg).missing;
                 return error.Usage;
             }
             const value = args[i + 1];
             if (value.len == 0) {
-                errmsg.* = "empty trap set path in -traps";
+                errmsg.* = trapsMessages(arg).empty;
                 return error.Usage;
             }
+            if (specs.items.len == 0) flag = arg;
             try specs.append(arena, value);
             i += 1;
             continue;
         }
         try rest.append(arena, arg);
     }
-    return .{ .specs = specs, .rest = rest };
+    return .{ .specs = specs, .rest = rest, .flag = flag };
 }
 
 pub fn parse(
@@ -285,7 +318,7 @@ pub fn parse(
 
     if (options.flags.generate_traps_header) {
         if (scan.specs.items.len > 0) {
-            errmsg.* = "cannot combine -traps with -generate-traps-header";
+            errmsg.* = trapsMessages(scan.flag).header;
             return error.Usage;
         }
         return .generate_traps_header;
@@ -293,7 +326,7 @@ pub fn parse(
 
     if (options.flags.generate_liblc3) {
         if (scan.specs.items.len > 0) {
-            errmsg.* = "cannot combine -traps with -generate-liblc3";
+            errmsg.* = trapsMessages(scan.flag).liblc3;
             return error.Usage;
         }
         return .{ .generate_liblc3 = .{
@@ -484,6 +517,34 @@ test parse {
         try expectEqualStrings("x", r.trap_specs[0]);
     }
 
+    // -T: shorthand for -traps, one path per flag, repeated
+    {
+        const r = (try testParse(&.{ "-T", "a.c", "-T", "b.cpp", "f" })).run;
+        defer std.testing.allocator.free(r.trap_specs);
+        defer std.testing.allocator.free(r.inputs);
+        try expectEqual(@as(usize, 2), r.trap_specs.len);
+        try expectEqualStrings("a.c", r.trap_specs[0]);
+        try expectEqualStrings("b.cpp", r.trap_specs[1]);
+    }
+
+    // -T and -traps mix freely
+    {
+        const r = (try testParse(&.{ "-traps", "a.c", "-T", "b.cpp", "f" })).run;
+        defer std.testing.allocator.free(r.trap_specs);
+        defer std.testing.allocator.free(r.inputs);
+        try expectEqual(@as(usize, 2), r.trap_specs.len);
+        try expectEqualStrings("a.c", r.trap_specs[0]);
+        try expectEqualStrings("b.cpp", r.trap_specs[1]);
+    }
+
+    // -T after the -- marker stays positional
+    {
+        const r = (try testParse(&.{ "--", "-T" })).run;
+        defer std.testing.allocator.free(r.inputs);
+        try expectEqualStrings("-T", r.inputs[0]);
+        try expectEqual(@as(usize, 0), r.trap_specs.len);
+    }
+
     // -traps after the -- marker stays positional
     {
         const r = (try testParse(&.{ "--", "-traps" })).run;
@@ -499,12 +560,21 @@ test parse {
     try std.testing.expectError(error.Usage, testParse(&.{ "-traps", "-o", "f" }));
     try std.testing.expectError(error.Usage, testParse(&.{ "-traps", "", "f" }));
 
+    // -T: missing or flag-shaped values
+    try std.testing.expectError(error.Usage, testParse(&.{"-T"}));
+    try std.testing.expectError(error.Usage, testParse(&.{ "f", "-T" }));
+    try std.testing.expectError(error.Usage, testParse(&.{ "-T", "--", "f" }));
+    try std.testing.expectError(error.Usage, testParse(&.{ "-T", "-o", "f" }));
+    try std.testing.expectError(error.Usage, testParse(&.{ "-T", "", "f" }));
+
     // -generate-traps-header needs no input file
     try expectEqual(.generate_traps_header, try testParse(&.{"-generate-traps-header"}));
 
     // -traps with the generated outputs is rejected
     try std.testing.expectError(error.Usage, testParse(&.{ "-traps", "x", "-generate-liblc3" }));
     try std.testing.expectError(error.Usage, testParse(&.{ "-traps", "x", "-generate-traps-header" }));
+    try std.testing.expectError(error.Usage, testParse(&.{ "-T", "x", "-generate-liblc3" }));
+    try std.testing.expectError(error.Usage, testParse(&.{ "-T", "x", "-generate-traps-header" }));
 
     // failure diagnostics are returned to the caller instead of logged
     {
@@ -517,6 +587,19 @@ test parse {
 
         try std.testing.expectError(error.Usage, parse(a, a, &.{"-traps"}, &writer, &errmsg));
         try expectEqualStrings("missing value for -traps", errmsg.?);
+
+        // the diagnostics name the spelling the user typed
+        errmsg = null;
+        try std.testing.expectError(error.Usage, parse(a, a, &.{"-T"}, &writer, &errmsg));
+        try expectEqualStrings("missing value for -T", errmsg.?);
+
+        errmsg = null;
+        try std.testing.expectError(error.Usage, parse(a, a, &.{ "-T", "", "f" }, &writer, &errmsg));
+        try expectEqualStrings("empty trap set path in -T", errmsg.?);
+
+        errmsg = null;
+        try std.testing.expectError(error.Usage, parse(a, a, &.{ "-T", "x", "-generate-liblc3" }, &writer, &errmsg));
+        try expectEqualStrings("cannot combine -T with -generate-liblc3", errmsg.?);
 
         errmsg = null;
         try std.testing.expectError(error.InvalidValue, parse(a, a, &.{ "-O5", "f" }, &writer, &errmsg));
