@@ -39,7 +39,7 @@ pub const Module = struct {
     }
 
     /// runs the LLVM verifier
-    /// on failure returns InvalidModule with the verifier messag
+    /// on failure returns InvalidModule with the verifier message
     pub fn verify(
         module: Module,
         gpa: std.mem.Allocator,

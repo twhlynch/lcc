@@ -12,8 +12,7 @@ pub const Error = error{
     AssemblyFailed,
 } || std.Io.Dir.RealPathFileError || std.Io.Dir.ReadFileAllocError;
 
-/// one assembled input file; segments[0] is the main program and any
-/// further segments are extras loaded at their own origins
+/// one assembled input file
 pub const Segment = struct {
     air: elk.Air,
     source: elk.Source,
@@ -28,7 +27,8 @@ pub const Segment = struct {
     }
 };
 
-/// program of one or more elk segments
+/// program of one or more elk segments; segments[0] is the main program
+/// and any further segments are extras loaded at their own origins
 pub const Program = struct {
     segments: []Segment,
 
@@ -61,8 +61,8 @@ pub const Program = struct {
 };
 
 /// read assembly files in order, parse each with elk and merge them into
-/// one image; labels resolve per file, so each file keeps its own origin
-/// diagnostics are reported through the provided reporter
+/// one image; labels resolve per file, so each file keeps its own origin,
+/// and diagnostics are reported through the provided reporter
 pub fn assembleFiles(
     io: std.Io,
     gpa: std.mem.Allocator,

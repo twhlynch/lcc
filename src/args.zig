@@ -218,9 +218,8 @@ fn isTrapsFlag(arg: []const u8) bool {
     return std.mem.eql(u8, arg, "-traps") or std.mem.eql(u8, arg, "-T");
 }
 
-/// diagnostics for one spelling of the traps flag. errmsg is never freed
-/// by the cli layer and unit tests pass the testing allocator through, so
-/// every message is a static string.
+/// diagnostics for one spelling of the traps flag; static strings, since
+/// the cli layer never frees them and tests pass the testing allocator
 const TrapsMessages = struct {
     missing: []const u8,
     empty: []const u8,
