@@ -664,7 +664,7 @@ test "trap set conflicts are rejected" {
     {
         const result = try runLcc(alloc, io, &.{ lcc_exe, "-traps", "nosuchset", "examples/hello.asm" });
         try std.testing.expectEqual(@as(u8, 2), result.code);
-        try std.testing.expect(std.mem.indexOf(u8, result.stderr, "bundled: minecraft, syscalls, terminal, time") != null);
+        try std.testing.expect(std.mem.indexOf(u8, result.stderr, "bundled: minecraft, rand, syscalls, terminal, time") != null);
     }
 
     // the same bundled set cannot be loaded twice
@@ -724,13 +724,42 @@ test "seed and rand set runs" {
     defer arena.deinit();
     const alloc = arena.allocator();
 
-    // build the zig implementation into an object lcc can link
-    const obj = "src/runtime/sets/rand.o";
+    defer cleanup(io, .{ .files = &.{test_dir ++ "/rand_out"} });
+
+    var out_buf: [128]u8 = undefined;
+    const out = try outPath(&out_buf, "rand_out");
+    const compile = try runLcc(alloc, io, &.{ lcc_exe, "-o", out, "-traps", "rand", "examples/rand.asm" });
+    try std.testing.expectEqual(@as(u8, 0), compile.code);
+
+    const run = try execWithStdin(alloc, io, &.{out}, "1\n");
+    try std.testing.expectEqual(@as(u8, 0), run.exit);
+
+    // the fixed sequence the set generates for seed 42
+    const expected = [_]u16{ 56422, 15795, 860 };
+
+    var lines = std.mem.splitScalar(u8, run.stdout, '\n');
+    for (expected) |want| {
+        const line = lines.next() orelse return error.MissingOutput;
+        const got = try std.fmt.parseInt(u16, line, 10);
+        try std.testing.expectEqual(want, got);
+    }
+}
+
+test "compiled zig trap set runs" {
+    requireLcc(std.testing.io);
+    try ensureTestDir(std.testing.io);
+    const io = std.testing.io;
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    // build the zig example into the object its stub links
+    const obj = "examples/traps/rand_zig.o";
     const build = try std.process.run(alloc, io, .{ .argv = &.{
         "zig",
         "build-obj",
         "-OReleaseFast",
-        "src/runtime/sets/rand.zig",
+        "examples/traps/rand_zig.zig",
         "-femit-bin=" ++ obj,
     } });
     defer alloc.free(build.stdout);
@@ -746,17 +775,17 @@ test "seed and rand set runs" {
         },
     }
 
-    defer cleanup(io, .{ .files = &.{ obj, test_dir ++ "/rand_out" } });
+    defer cleanup(io, .{ .files = &.{ obj, test_dir ++ "/zig_rand_out" } });
 
     var out_buf: [128]u8 = undefined;
-    const out = try outPath(&out_buf, "rand_out");
-    const compile = try runLcc(alloc, io, &.{ lcc_exe, "-o", out, "-traps", "src/runtime/sets/rand.c", "examples/rand.asm" });
+    const out = try outPath(&out_buf, "zig_rand_out");
+    const compile = try runLcc(alloc, io, &.{ lcc_exe, "-o", out, "-traps", "examples/traps/rand_zig.c", "examples/rand.asm" });
     try std.testing.expectEqual(@as(u8, 0), compile.code);
 
     const run = try execWithStdin(alloc, io, &.{out}, "1\n");
     try std.testing.expectEqual(@as(u8, 0), run.exit);
 
-    // the same DefaultPrng sequence the set generates for seed 42
+    // the same DefaultPrng sequence the example generates for seed 42
     var prng = std.Random.DefaultPrng.init(42);
     var expected: [3]u16 = undefined;
     for (&expected) |*value| {
