@@ -9,8 +9,8 @@ lcc program.asm -traps a.c -traps b.c    # one flag per set
 ```
 
 A few sets are compiled into lcc itself and can be selected by name. The bundled
-sets are `minecraft`, `syscalls`, `terminal`, and `time`. Any other value is
-read as a `.c`/`.cpp` source.
+sets are `minecraft`, `rand`, `syscalls`, `terminal`, and `time`. Any other value
+is read as a `.c`/`.cpp` source.
 
 ```sh
 lcc program.asm -traps terminal -traps time
