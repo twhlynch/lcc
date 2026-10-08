@@ -11,6 +11,7 @@
 .DS_Store
 
 /.lcc-test/
+/.lcc-tmp/
 
 /liblc3.*
 
