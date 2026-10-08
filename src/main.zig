@@ -19,10 +19,11 @@ const Diagnostics = struct {
     fancy_sink: elk.reporting.Sink.Fancy = undefined,
     reporter: elk.reporting.Primary = undefined,
 
-    fn init(diags: *Diagnostics, io: std.Io) void {
+    fn init(diags: *Diagnostics, io: std.Io, quiet: bool) void {
         diags.stderr_writer = std.Io.File.stderr().writer(io, &diags.stderr_buffer);
         diags.fancy_sink = .new(&diags.stderr_writer.interface, true);
         diags.reporter = .new(diags.fancy_sink.interface());
+        if (quiet) diags.reporter.options.strictness = .relaxed;
     }
 
     fn summarize(diags: *Diagnostics) void {
@@ -154,7 +155,7 @@ pub fn main(init: std.process.Init) !u8 {
     };
 
     var diags: Diagnostics = undefined;
-    diags.init(io);
+    diags.init(io, options.quiet);
 
     var table = trapsets.load(gpa, io, options.trap_specs) catch |err| switch (err) {
         error.InvalidTrapSet => {

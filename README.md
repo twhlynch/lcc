@@ -45,6 +45,7 @@ standard. See [docs/behaviour.md](docs/behaviour.md).
 | `-Onone`                    | Skip the LLVM optimization pass           |
 | `-O0` .. `-O3`              | LLVM optimization levels                  |
 | `-E`, `-emit-llvm`          | Print the optimized LLVM IR to stdout     |
+| `-q`, `--quiet`             | Suppress warnings from the assembler      |
 | `-target <triple>`          | Cross-compile for a target triple         |
 | `-arch <name>`              | Shorthand for `-target` using the host OS |
 | `-dynamic`                  | Link against liblc3 dynamically           |

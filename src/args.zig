@@ -10,6 +10,7 @@ pub const usage =
     \\  -target <triple>        LLVM target triple for code generation
     \\  -arch <name>            Architecture component of the host triple
     \\  -E, -emit-llvm          Print optimised LLVM IR
+    \\  -q, --quiet             Suppress warnings from the assembler
     \\
     \\  -dynamic                Link against liblc3 dynamically
     \\  -L<dir>                 Directory to search for liblc3
@@ -43,6 +44,7 @@ pub const Options = struct {
     output: ?[]const u8,
     optimize: Optimize,
     emit_llvm: bool,
+    quiet: bool,
     target: ?[]const u8,
     arch: ?[]const u8,
     dynamic: bool,
@@ -78,6 +80,10 @@ const template = .{
     .emit_llvm = zilc.Flag{
         .short = 'E',
         .long = "emit-llvm",
+    },
+    .quiet = zilc.Flag{
+        .short = 'q',
+        .long = "quiet",
     },
     .target = zilc.Flag{
         .long = "target",
@@ -352,6 +358,7 @@ pub fn parse(
         .output = options.flags.output,
         .optimize = options.flags.optimize orelse .@"0",
         .emit_llvm = options.flags.emit_llvm,
+        .quiet = options.flags.quiet,
         .target = options.flags.target,
         .arch = options.flags.arch,
         .dynamic = options.flags.dynamic,
@@ -394,6 +401,7 @@ test parse {
         try expectEqualStrings("file.asm", r.inputs[0]);
         try expectEqual(.@"0", r.optimize);
         try expect(!r.emit_llvm);
+        try expect(!r.quiet);
         try expect(!r.dynamic);
         try expectEqual(null, r.lib_path);
     }
@@ -426,6 +434,18 @@ test parse {
         const r = (try testParse(&.{ "-emit-llvm", "f" })).run;
         defer std.testing.allocator.free(r.inputs);
         try expect(r.emit_llvm);
+    }
+
+    // -q and --quiet
+    {
+        const r = (try testParse(&.{ "-q", "f" })).run;
+        defer std.testing.allocator.free(r.inputs);
+        try expect(r.quiet);
+    }
+    {
+        const r = (try testParse(&.{ "--quiet", "f" })).run;
+        defer std.testing.allocator.free(r.inputs);
+        try expect(r.quiet);
     }
 
     // -target

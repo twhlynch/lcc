@@ -343,6 +343,55 @@ test "usage errors are reported" {
     }
 }
 
+test "quiet suppresses assembler warnings" {
+    requireLcc(std.testing.io);
+    try ensureTestDir(std.testing.io);
+    const io = std.testing.io;
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    // a colon label and an unreferenced label are both warnings
+    const warns = test_dir ++ "/warns.asm";
+    try writeFixture(io, warns,
+        \\.ORIG x3000
+        \\start:
+        \\    halt
+        \\.END
+        \\
+    );
+
+    var loud_buf: [128]u8 = undefined;
+    const loud_out = try outPath(&loud_buf, "quiet_off");
+    const loud = try runLcc(alloc, io, &.{ lcc_exe, "-o", loud_out, warns });
+    defer cleanup(io, .{ .files = &.{loud_out} });
+    try std.testing.expectEqual(@as(u8, 0), loud.code);
+    try std.testing.expect(std.mem.indexOf(u8, loud.stderr, "Warning:") != null);
+
+    var quiet_buf: [128]u8 = undefined;
+    const quiet_out = try outPath(&quiet_buf, "quiet_on");
+    const quiet = try runLcc(alloc, io, &.{ lcc_exe, "-q", "-o", quiet_out, warns });
+    defer cleanup(io, .{ .files = &.{ warns, quiet_out } });
+    try std.testing.expectEqual(@as(u8, 0), quiet.code);
+    try std.testing.expect(std.mem.indexOf(u8, quiet.stderr, "Warning:") == null);
+    try std.testing.expect(std.mem.indexOf(u8, quiet.stderr, "warnings") == null);
+
+    // errors still reach stderr under -q
+    const broken = test_dir ++ "/quiet_broken.asm";
+    try writeFixture(io, broken,
+        \\.ORIG x3000
+        \\dup:
+        \\dup:
+        \\    halt
+        \\.END
+        \\
+    );
+    const result = try runLcc(alloc, io, &.{ lcc_exe, "--quiet", "-o", quiet_out, broken });
+    defer cleanup(io, .{ .files = &.{broken} });
+    try std.testing.expect(result.code != 0);
+    try std.testing.expect(std.mem.indexOf(u8, result.stderr, "Error:") != null);
+}
+
 test "multiple input files compile into one program" {
     requireLcc(std.testing.io);
     try ensureTestDir(std.testing.io);
