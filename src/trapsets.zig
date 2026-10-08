@@ -22,10 +22,10 @@ const BundledSet = struct {
 };
 
 /// trap sets shipped inside lcc; -traps accepts their names alongside
-/// file paths, and a name wins over a same-named file. rand is left out:
-/// its LCC_LINK names a sibling object file the compiler does not ship.
+/// file paths, and a name wins over a same-named file
 const bundled = [_]BundledSet{
     .{ .name = "minecraft", .ext = ".cpp", .source = @embedFile("runtime/sets/minecraft.cpp") },
+    .{ .name = "rand", .ext = ".cpp", .source = @embedFile("runtime/sets/rand.cpp") },
     .{ .name = "syscalls", .ext = ".c", .source = @embedFile("runtime/sets/syscalls.c") },
     .{ .name = "terminal", .ext = ".c", .source = @embedFile("runtime/sets/terminal.c") },
     .{ .name = "time", .ext = ".cpp", .source = @embedFile("runtime/sets/time.cpp") },
@@ -560,4 +560,17 @@ test "bundled sets load by name" {
         if (std.mem.eql(u8, flag, cxxRuntimeFlag())) found_cxx = true;
     }
     try std.testing.expect(found_cxx);
+}
+
+test "bundled rand set loads by name" {
+    var table = try load(std.testing.allocator, std.testing.io, &.{"rand"});
+    defer table.deinit(std.testing.allocator);
+
+    try std.testing.expectEqualStrings("lcc_trap_seed", table.symbols[0x40].?);
+    try std.testing.expectEqualStrings("lcc_trap_rand", table.symbols[0x41].?);
+    try std.testing.expect(table.sets.items[0].bundled);
+
+    // the c++ set brings the platform c++ runtime flag and nothing else
+    try std.testing.expectEqual(@as(usize, 1), table.link_flags.items.len);
+    try std.testing.expectEqualStrings(cxxRuntimeFlag(), table.link_flags.items[0]);
 }
