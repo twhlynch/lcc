@@ -902,6 +902,56 @@ test "terminal set runs" {
     );
 }
 
+test "terminal set restores the screen on SIGINT" {
+    requireLcc(std.testing.io);
+    try ensureTestDir(std.testing.io);
+    const io = std.testing.io;
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var out_buf: [128]u8 = undefined;
+    const out = try outPath(&out_buf, "term_sig.out");
+    const compile = try runLcc(alloc, io, &.{ lcc_exe, "-o", out, "-traps", "terminal", "examples/term.asm" });
+    defer cleanup(io, .{ .files = &.{out} });
+    try std.testing.expectEqual(@as(u8, 0), compile.code);
+
+    // stdin stays open: the program arms the restore on the first cur,
+    // then blocks in key waiting for a keypress
+    var child = try std.process.spawn(io, .{
+        .argv = &.{out},
+        .stdin = .pipe,
+        .stdout = .pipe,
+        .stderr = .pipe,
+    });
+    try io.sleep(.fromMilliseconds(300), .real);
+
+    try std.posix.kill(@intCast(child.id.?), .INT);
+    child.stdin.?.close(io);
+    child.stdin = null;
+
+    const stdout = try drain(alloc, io, &child, .stdout);
+    const stderr = try drain(alloc, io, &child, .stderr);
+    defer alloc.free(stdout);
+    defer alloc.free(stderr);
+
+    // the handler this set chained to still ends the program with
+    // 128 + signal, rather than the signal killing it outright
+    const term = try child.wait(io);
+    switch (term) {
+        .exited => |code| try std.testing.expectEqual(@as(u8, 130), code),
+        else => return error.ProgramCrashed,
+    }
+
+    // the screen was restored after the output: cursor shown and the
+    // alternate buffer left
+    try std.testing.expectEqualStrings(
+        "\x1b[2J\x1b[1;1H\x1b[2;3H\x1b[?25l\x1b[?25h\x1b[?25h\x1b[?1049l",
+        stdout,
+    );
+    try std.testing.expectEqualStrings("", stderr);
+}
+
 test "C++ trap sets link the C++ runtime automatically" {
     requireLcc(std.testing.io);
     try ensureTestDir(std.testing.io);

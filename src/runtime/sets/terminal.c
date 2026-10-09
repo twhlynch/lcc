@@ -35,6 +35,7 @@
 #include <sys/select.h>
 #include <sys/time.h>
 
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -72,10 +73,45 @@ static void sequence(const char *text)
 /* whether the exit restore for the screen has been registered */
 static int restore_armed = 0;
 
+/* terminal restore bytes */
+static const char restore_text[] = "\x1b[?25h\x1b[?1049l";
+
 /* shows the cursor and leaves the alternate buffer again */
 static void restore_screen(void)
 {
-	sequence("\x1b[?25h\x1b[?1049l");
+	sequence(restore_text);
+}
+
+/* the signals this set takes over from the base runtime */
+static const int restore_signals[] = {SIGINT, SIGTERM};
+#define RESTORE_SIGNAL_COUNT 2
+static void (*previous_handlers[RESTORE_SIGNAL_COUNT])(int);
+
+/* restore the screen, then hands the signal to the runtime handler */
+static void on_signal(int sig)
+{
+	if (restore_armed)
+	{
+		// safe directly to stdout fd
+		(void)write(STDOUT_FILENO, restore_text, sizeof(restore_text) - 1);
+	}
+
+	for (int i = 0; i < RESTORE_SIGNAL_COUNT; i++)
+	{
+		if (restore_signals[i] == sig)
+		{
+			void (*previous)(int) = previous_handlers[i];
+			if (previous != SIG_DFL && previous != SIG_IGN)
+			{
+				previous(sig);
+				return;
+			}
+			break;
+		}
+	}
+
+	(void)signal(sig, SIG_DFL);
+	(void)raise(sig);
 }
 
 /* arms that restore the first time the program touches the screen */
@@ -85,6 +121,20 @@ static void arm_restore_screen(void)
 	{
 		restore_armed = 1;
 		(void)atexit(restore_screen);
+
+		for (int i = 0; i < RESTORE_SIGNAL_COUNT; i++)
+		{
+			struct sigaction ours;
+			struct sigaction previous;
+			ours.sa_handler = on_signal;
+			(void)sigemptyset(&ours.sa_mask);
+			ours.sa_flags = 0;
+
+			if (sigaction(restore_signals[i], &ours, &previous) == 0)
+			{
+				previous_handlers[i] = previous.sa_handler;
+			}
+		}
 	}
 }
 
