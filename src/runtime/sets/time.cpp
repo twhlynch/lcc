@@ -9,12 +9,12 @@
 #include <ctime>
 #include <thread>
 
-#include "lcc_trap.h"
+#include "lc3_trap.h"
 
 #define WORD_MASK 0xFFFF
 #define WORD_SHIFT 16
 
-LCC_TRAP(0x30, time)
+LC3_TRAP(0x30, time)
 {
 	const unsigned long long secs = static_cast<unsigned long long>(
 		std::chrono::system_clock::to_time_t(std::chrono::system_clock::now())
@@ -23,7 +23,7 @@ LCC_TRAP(0x30, time)
 	ctx->reg[1] = static_cast<unsigned short>((secs >> WORD_SHIFT) & WORD_MASK);
 }
 
-LCC_TRAP(0x31, sleep)
+LC3_TRAP(0x31, sleep)
 {
 	std::this_thread::sleep_for(std::chrono::milliseconds(ctx->reg[0]));
 }

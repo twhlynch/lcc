@@ -7,11 +7,11 @@
 
 #include <random>
 
-#include "lcc_trap.h"
+#include "lc3_trap.h"
 
 static std::mt19937 generator(std::random_device {}()); // NOLINT(misc-use-anonymous-namespace, cert-err58-cpp)
 
-LCC_TRAP(0x40, seed)
+LC3_TRAP(0x40, seed)
 {
 	unsigned int seed = ctx->reg[0];
 
@@ -23,7 +23,7 @@ LCC_TRAP(0x40, seed)
 	generator.seed(seed);
 }
 
-LCC_TRAP(0x41, rand)
+LC3_TRAP(0x41, rand)
 {
 	unsigned int result = generator();
 

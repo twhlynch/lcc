@@ -189,7 +189,7 @@ fn initScratchPaths(source_path: ?[]const u8) struct { obj: []const u8, rt: []co
     const stem = if (source_path) |p| std.fs.path.basename(p) else "lcc-tmp";
     const obj = std.fmt.bufPrint(&obj_scratch_buf, ".{s}.o", .{stem}) catch "lcc-tmp.o";
     const rt = std.fmt.bufPrint(&rt_scratch_buf, ".{s}.c", .{stem}) catch "lcc-tmp.c";
-    const hdr = std.fmt.bufPrint(&hdr_scratch_buf, ".{s}.trap/{s}", .{ stem, trapsets.trap_header_name }) catch ".lcc-tmp.trap/lcc_trap.h";
+    const hdr = std.fmt.bufPrint(&hdr_scratch_buf, ".{s}.trap/{s}", .{ stem, trapsets.trap_header_name }) catch ".lcc-tmp.trap/lc3_trap.h";
     return .{ .obj = obj, .rt = rt, .hdr = hdr };
 }
 

@@ -615,7 +615,7 @@ test "trap set can override a standard trap" {
     const alloc = arena.allocator();
 
     const fixture = test_dir ++ "/ovr.c";
-    try writeFixture(io, fixture, "LCC_TRAP(0x26, putn) {}\n");
+    try writeFixture(io, fixture, "LC3_TRAP(0x26, putn) {}\n");
 
     var out_buf: [128]u8 = undefined;
     const out = try outPath(&out_buf, "override_putn");
@@ -637,14 +637,14 @@ test "multiple trap sets load together" {
     const alloc = arena.allocator();
 
     try writeFixture(io, test_dir ++ "/alpha.c",
-        \\LCC_TRAP(0x30, alpha)
+        \\LC3_TRAP(0x30, alpha)
         \\{
         \\    ctx->reg[0] = 42;
         \\}
         \\
     );
     // beta is optional; only alpha is needed for behaviour
-    try writeFixture(io, test_dir ++ "/beta.c", "LCC_TRAP(0x31, beta) {}\n");
+    try writeFixture(io, test_dir ++ "/beta.c", "LC3_TRAP(0x31, beta) {}\n");
 
     var out_buf: [128]u8 = undefined;
     const out = try outPath(&out_buf, "multi_set");
@@ -675,8 +675,8 @@ test "trap set conflicts are rejected" {
     const alloc = arena.allocator();
 
     // two sets claiming the same vector
-    try writeFixture(io, test_dir ++ "/one.c", "LCC_TRAP(0x30, alpha) {}\n");
-    try writeFixture(io, test_dir ++ "/two.c", "LCC_TRAP(0x30, gamma) {}\n");
+    try writeFixture(io, test_dir ++ "/one.c", "LC3_TRAP(0x30, alpha) {}\n");
+    try writeFixture(io, test_dir ++ "/two.c", "LC3_TRAP(0x30, gamma) {}\n");
     {
         const result = try runLcc(alloc, io, &.{
             lcc_exe,
@@ -692,7 +692,7 @@ test "trap set conflicts are rejected" {
     }
 
     // a set may not rename a standard trap
-    try writeFixture(io, test_dir ++ "/rename.c", "LCC_TRAP(0x26, printn) {}\n");
+    try writeFixture(io, test_dir ++ "/rename.c", "LC3_TRAP(0x26, printn) {}\n");
     {
         const result = try runLcc(alloc, io, &.{ lcc_exe, "-traps", test_dir ++ "/rename.c", "examples/hello.asm" });
         defer cleanup(io, .{ .files = &.{test_dir ++ "/rename.c"} });
@@ -701,7 +701,7 @@ test "trap set conflicts are rejected" {
     }
 
     // aliases must be lowercase letters
-    try writeFixture(io, test_dir ++ "/badalias.c", "LCC_TRAP(0x30, Bad1) {}\n");
+    try writeFixture(io, test_dir ++ "/badalias.c", "LC3_TRAP(0x30, Bad1) {}\n");
     {
         const result = try runLcc(alloc, io, &.{ lcc_exe, "-traps", test_dir ++ "/badalias.c", "examples/hello.asm" });
         defer cleanup(io, .{ .files = &.{test_dir ++ "/badalias.c"} });
@@ -961,10 +961,10 @@ test "C++ trap sets link the C++ runtime automatically" {
     const alloc = arena.allocator();
 
     try writeFixture(io, test_dir ++ "/cxxset.cpp",
-        \\#include "lcc_trap.h"
+        \\#include "lc3_trap.h"
         \\#include <string>
         \\
-        \\LCC_TRAP(0x30, cxxhello)
+        \\LC3_TRAP(0x30, cxxhello)
         \\{
         \\    std::string word = "hi";
         \\    ctx->reg[0] = (unsigned short)word.size();
@@ -994,15 +994,15 @@ test "C++ runtime flag is added once" {
     try std.testing.expectEqual(@as(usize, 1), countFlag(ts.link_flags.items, cxx));
 
     // a C++ set that declares the platform runtime itself is not doubled
-    const declared_src = try std.fmt.allocPrint(alloc, "LCC_LINK({s})\nLCC_TRAP(0x30, cxxflag) {{}}\n", .{cxx});
+    const declared_src = try std.fmt.allocPrint(alloc, "LC3_LINK({s})\nLC3_TRAP(0x30, cxxflag) {{}}\n", .{cxx});
     try writeFixture(io, test_dir ++ "/declcpp.cpp", declared_src);
     defer cleanup(io, .{ .files = &.{test_dir ++ "/declcpp.cpp"} });
     var dup = try trapsets.load(alloc, io, &.{test_dir ++ "/declcpp.cpp"});
     defer dup.deinit(alloc);
     try std.testing.expectEqual(@as(usize, 1), countFlag(dup.link_flags.items, cxx));
 
-    // an alternative runtime in LCC_LINK suppresses the default
-    const alt_src = try std.fmt.allocPrint(alloc, "LCC_LINK({s})\nLCC_TRAP(0x30, cxxalt) {{}}\n", .{other});
+    // an alternative runtime in LC3_LINK suppresses the default
+    const alt_src = try std.fmt.allocPrint(alloc, "LC3_LINK({s})\nLC3_TRAP(0x30, cxxalt) {{}}\n", .{other});
     try writeFixture(io, test_dir ++ "/stdcpp.cpp", alt_src);
     defer cleanup(io, .{ .files = &.{test_dir ++ "/stdcpp.cpp"} });
     var alt = try trapsets.load(alloc, io, &.{test_dir ++ "/stdcpp.cpp"});
@@ -1010,14 +1010,14 @@ test "C++ runtime flag is added once" {
     try std.testing.expectEqual(@as(usize, 0), countFlag(alt.link_flags.items, cxx));
 
     // plain C sets stay clean
-    try writeFixture(io, test_dir ++ "/plain.c", "LCC_TRAP(0x30, plainflag) {}\n");
+    try writeFixture(io, test_dir ++ "/plain.c", "LC3_TRAP(0x30, plainflag) {}\n");
     defer cleanup(io, .{ .files = &.{test_dir ++ "/plain.c"} });
     var c = try trapsets.load(alloc, io, &.{test_dir ++ "/plain.c"});
     defer c.deinit(alloc);
     try std.testing.expectEqual(@as(usize, 0), countFlag(c.link_flags.items, cxx));
 }
 
-test "LCC_LINK paths resolve relative to the set file" {
+test "LC3_LINK paths resolve relative to the set file" {
     try ensureTestDir(std.testing.io);
     const io = std.testing.io;
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
@@ -1025,8 +1025,8 @@ test "LCC_LINK paths resolve relative to the set file" {
     const alloc = arena.allocator();
 
     try writeFixture(io, test_dir ++ "/linkpath.c",
-        \\LCC_TRAP(0x30, linky);
-        \\LCC_LINK(./deps/lib.a, -lmcpp, /opt/lib/abs.a)
+        \\LC3_TRAP(0x30, linky);
+        \\LC3_LINK(./deps/lib.a, -lmcpp, /opt/lib/abs.a)
         \\
     );
     defer cleanup(io, .{ .files = &.{test_dir ++ "/linkpath.c"} });
@@ -1050,8 +1050,8 @@ test "generate traps header writes the ABI" {
     try std.testing.expectEqual(@as(u8, 0), result.code);
 
     const header = try std.Io.Dir.cwd().readFileAlloc(io, trapsets.trap_header_name, arena.allocator(), .limited(1 << 20));
-    try std.testing.expect(std.mem.indexOf(u8, header, "lcc_trap_ctx") != null);
-    try std.testing.expect(std.mem.indexOf(u8, header, "LCC_TRAP") != null);
+    try std.testing.expect(std.mem.indexOf(u8, header, "lc3_trap_ctx") != null);
+    try std.testing.expect(std.mem.indexOf(u8, header, "LC3_TRAP") != null);
 }
 
 test "trap sets work with dynamic linking" {
@@ -1063,11 +1063,11 @@ test "trap sets work with dynamic linking" {
     const alloc = arena.allocator();
 
     try writeFixture(io, test_dir ++ "/dynset.cpp",
-        \\#include "lcc_trap.h"
+        \\#include "lc3_trap.h"
         \\#include <cstdio>
         \\#include <string>
         \\
-        \\LCC_TRAP(0x30, dynhello)
+        \\LC3_TRAP(0x30, dynhello)
         \\{
         \\    std::string word = "CXX";
         \\    std::printf("%s\n", word.c_str());
@@ -1100,7 +1100,7 @@ test "standard trap override works with dynamic linking" {
     defer arena.deinit();
     const alloc = arena.allocator();
 
-    try writeFixture(io, test_dir ++ "/ovrdyn.c", "LCC_TRAP(0x26, putn) {}\n");
+    try writeFixture(io, test_dir ++ "/ovrdyn.c", "LC3_TRAP(0x26, putn) {}\n");
     defer cleanup(io, .{ .files = &.{
         test_dir ++ "/ovrdyn.c",
         test_dir ++ "/override_dyn",

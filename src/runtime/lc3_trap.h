@@ -2,16 +2,16 @@
  * lcc trap ABI
  *
  * every trap handler receives one pointer to this context. lcc scans trap set
- * sources for LCC_TRAP declarations to learn each vector's mnemonic and
+ * sources for LC3_TRAP declarations to learn each vector's mnemonic and
  * symbol. The compiled handlers are linked into the executable.
  *
  * lcc force-includes this header when compiling trap sets and the runtime, so
  * the macros are always available. including it explicitly is harmless.
  */
-#ifndef LCC_TRAP_H
-#define LCC_TRAP_H
+#ifndef LC3_TRAP_H
+#define LC3_TRAP_H
 
-typedef struct lcc_trap_ctx // NOLINT(modernize-use-using)
+typedef struct lc3_trap_ctx // NOLINT(modernize-use-using)
 {
 	/* 65536 word address space */
 	unsigned short *memory;
@@ -21,27 +21,27 @@ typedef struct lcc_trap_ctx // NOLINT(modernize-use-using)
 	unsigned short pc;
 	/* condition code value */
 	unsigned short *cc;
-} lcc_trap_ctx;
+} lc3_trap_ctx;
 
 #ifdef __cplusplus
-#define LCC_EXTERN extern "C"
+#define LC3_EXTERN extern "C"
 #else
-#define LCC_EXTERN
+#define LC3_EXTERN
 #endif
 
 /*
  * declares a trap handler for vector `vect` with the mnemonic `name`, e.g.
- * LCC_TRAP(0x28, chat). lcc finds these declarations by scanning the source,
+ * LC3_TRAP(0x28, chat). lcc finds these declarations by scanning the source,
  * so keep each invocation on one line. the handler body follows the macro call
  * as a normal function definition.
  */
-#define LCC_TRAP(vect, name) LCC_EXTERN void lcc_trap_##name(lcc_trap_ctx *ctx) // NOLINT
+#define LC3_TRAP(vect, name) LC3_EXTERN void lc3_trap_##name(lc3_trap_ctx *ctx) // NOLINT
 
 /*
  * extra flags appended to the link command when the set is used, e.g.
- * LCC_LINK(-lmcpp). one flag per comma-separated argument. Expands to nothing.
- * lcc finds it by scanning the source like LCC_TRAP.
+ * LC3_LINK(-lmcpp). one flag per comma-separated argument. Expands to nothing.
+ * lcc finds it by scanning the source like LC3_TRAP.
  */
-#define LCC_LINK(...)
+#define LC3_LINK(...)
 
 #endif

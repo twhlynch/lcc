@@ -1,15 +1,15 @@
-//! trap set loading: scans LCC_TRAP declarations and builds the tables
+//! trap set loading: scans LC3_TRAP declarations and builds the tables
 //! shared by the parser, codegen, and link steps
 
 const std = @import("std");
 const elk = @import("elk.zig");
 
 /// the trap ABI header, force-included when compiling runtime and sets
-pub const trap_header = @embedFile("runtime/lcc_trap.h");
+pub const trap_header = @embedFile("runtime/lc3_trap.h");
 
 /// the header's fixed file name: -iquote, -generate-traps-header and
-/// #include "lcc_trap.h" in set sources all depend on it
-pub const trap_header_name = "lcc_trap.h";
+/// #include "lc3_trap.h" in set sources all depend on it
+pub const trap_header_name = "lc3_trap.h";
 
 /// a C identifier or linker flag; null terminated for LLVM and spawn
 pub const Symbol = [:0]const u8;
@@ -60,9 +60,9 @@ pub const Set = struct {
     bundled: bool = false,
     /// declared handlers, in source order
     decls: std.ArrayList(Decl) = .empty,
-    /// flags from LCC_LINK
+    /// flags from LC3_LINK
     link_flags: std.ArrayList([]const u8) = .empty,
-    /// generated handler symbols (lcc_trap_<alias>)
+    /// generated handler symbols (lc3_trap_<alias>)
     symbols: std.ArrayList(Symbol) = .empty,
 
     pub fn deinit(set: *Set, gpa: std.mem.Allocator) void {
@@ -75,7 +75,7 @@ pub const Set = struct {
     }
 };
 
-/// one LCC_TRAP(vect, alias) declaration
+/// one LC3_TRAP(vect, alias) declaration
 pub const Decl = struct {
     vect: u8,
     alias: []const u8,
@@ -90,7 +90,7 @@ pub const Table = struct {
     symbols: [256]?Symbol,
     /// loaded sets, in command-line order
     sets: std.ArrayList(Set) = .empty,
-    /// merged LCC_LINK flags from every set, plus -lc++ when a C++ set loads
+    /// merged LC3_LINK flags from every set, plus -lc++ when a C++ set loads
     link_flags: std.ArrayList([]const u8) = .empty,
 
     pub fn deinit(table: *Table, gpa: std.mem.Allocator) void {
@@ -188,7 +188,7 @@ pub fn load(gpa: std.mem.Allocator, io: std.Io, specs: []const []const u8) LoadE
             }
 
             table.traps.entries[decl.vect] = .{ .alias = decl.alias, .callback = null };
-            const symbol = try std.fmt.allocPrintSentinel(gpa, "lcc_trap_{s}", .{decl.alias}, 0);
+            const symbol = try std.fmt.allocPrintSentinel(gpa, "lc3_trap_{s}", .{decl.alias}, 0);
             errdefer gpa.free(symbol);
             try set.symbols.append(gpa, symbol);
             table.symbols[decl.vect] = symbol;
@@ -249,7 +249,7 @@ fn loadSet(gpa: std.mem.Allocator, io: std.Io, spec: []const u8) LoadError!Set {
     return set;
 }
 
-/// scan set.source for LCC_TRAP and LCC_LINK declarations
+/// scan set.source for LC3_TRAP and LC3_LINK declarations
 fn scanDecls(gpa: std.mem.Allocator, set: *Set) LoadError!void {
     const source = set.source;
     var line: usize = 1;
@@ -261,7 +261,7 @@ fn scanDecls(gpa: std.mem.Allocator, set: *Set) LoadError!void {
         const c = source[i];
         if (c == '#') {
             // preprocessor lines are skipped so wrapper macros such as
-            // #define CHAT() LCC_TRAP(0x30, chat) do not register twice
+            // #define CHAT() LC3_TRAP(0x30, chat) do not register twice
             while (i < source.len) {
                 if (source[i] == '\\' and i + 1 < source.len and source[i + 1] == '\n') {
                     i += 2;
@@ -278,7 +278,7 @@ fn scanDecls(gpa: std.mem.Allocator, set: *Set) LoadError!void {
             i += 1;
             while (i < source.len and isIdentCont(source[i])) i += 1;
             const ident = source[start..i];
-            if (std.mem.eql(u8, ident, "LCC_TRAP") or std.mem.eql(u8, ident, "LCC_LINK")) {
+            if (std.mem.eql(u8, ident, "LC3_TRAP") or std.mem.eql(u8, ident, "LC3_LINK")) {
                 i = try scanMacro(gpa, set, ident, source, i, &line);
             }
         } else {
@@ -305,7 +305,7 @@ pub fn cxxRuntimeFlag() []const u8 {
     return if (@import("builtin").os.tag.isDarwin()) "-lc++" else "-lstdc++";
 }
 
-/// true when LCC_LINK already names a C++ runtime
+/// true when LC3_LINK already names a C++ runtime
 fn declaredCxxRuntime(flags: []const []const u8) bool {
     for (flags) |flag| {
         if (std.mem.eql(u8, flag, "-lc++") or std.mem.eql(u8, flag, "-lstdc++")) return true;
@@ -313,7 +313,7 @@ fn declaredCxxRuntime(flags: []const []const u8) bool {
     return false;
 }
 
-/// scan a LCC_TRAP/LCC_LINK invocation starting at ident_end; returns the
+/// scan a LC3_TRAP/LC3_LINK invocation starting at ident_end; returns the
 /// index after the call, or ident_end when the identifier is not called
 fn scanMacro(
     gpa: std.mem.Allocator,
@@ -365,7 +365,7 @@ fn scanMacro(
         return error.InvalidTrapSet;
     }
 
-    if (std.mem.eql(u8, ident, "LCC_TRAP")) {
+    if (std.mem.eql(u8, ident, "LC3_TRAP")) {
         try addTrapDecl(gpa, set, macro_line, args[0..count]);
     } else {
         try addLinkFlags(gpa, set, macro_line, args[0..count]);
@@ -396,7 +396,7 @@ fn addTrapDecl(
     args: []const []const u8,
 ) LoadError!void {
     if (args.len != 2) {
-        std.log.err("{s}:{d}: LCC_TRAP expects (vector, alias)", .{ set.path, macro_line });
+        std.log.err("{s}:{d}: LC3_TRAP expects (vector, alias)", .{ set.path, macro_line });
         return error.InvalidTrapSet;
     }
     const vect_text = std.mem.trim(u8, args[0], " \t\r\n");
@@ -419,7 +419,7 @@ fn addLinkFlags(
     args: []const []const u8,
 ) LoadError!void {
     if (args.len == 0) {
-        std.log.err("{s}:{d}: LCC_LINK expects at least one flag", .{ set.path, macro_line });
+        std.log.err("{s}:{d}: LC3_LINK expects at least one flag", .{ set.path, macro_line });
         return error.InvalidTrapSet;
     }
     const dir = std.fs.path.dirname(set.path);
@@ -429,7 +429,7 @@ fn addLinkFlags(
             flag = flag[1 .. flag.len - 1];
         }
         if (flag.len == 0) {
-            std.log.err("{s}:{d}: empty flag in LCC_LINK", .{ set.path, macro_line });
+            std.log.err("{s}:{d}: empty flag in LC3_LINK", .{ set.path, macro_line });
             return error.InvalidTrapSet;
         }
         const resolved = try resolveLinkPath(gpa, dir, flag);
@@ -440,7 +440,7 @@ fn addLinkFlags(
     }
 }
 
-/// resolves a LCC_LINK argument against dir, the set file's own directory:
+/// resolves a LC3_LINK argument against dir, the set file's own directory:
 /// bare paths and relative -L values are joined to it, flags and absolute
 /// paths pass through unchanged. dir is null for a set named without one.
 fn resolveLinkPath(gpa: std.mem.Allocator, dir: ?[]const u8, flag: []const u8) LoadError![]const u8 {
@@ -549,8 +549,8 @@ test "bundled sets load by name" {
     var table = try load(std.testing.allocator, std.testing.io, &.{ "terminal", "time" });
     defer table.deinit(std.testing.allocator);
 
-    try std.testing.expectEqualStrings("lcc_trap_key", table.symbols[0x45].?);
-    try std.testing.expectEqualStrings("lcc_trap_time", table.symbols[0x30].?);
+    try std.testing.expectEqualStrings("lc3_trap_key", table.symbols[0x45].?);
+    try std.testing.expectEqualStrings("lc3_trap_time", table.symbols[0x30].?);
     try std.testing.expect(table.sets.items[0].bundled);
     try std.testing.expect(table.sets.items[1].bundled);
 
@@ -566,8 +566,8 @@ test "bundled rand set loads by name" {
     var table = try load(std.testing.allocator, std.testing.io, &.{"rand"});
     defer table.deinit(std.testing.allocator);
 
-    try std.testing.expectEqualStrings("lcc_trap_seed", table.symbols[0x40].?);
-    try std.testing.expectEqualStrings("lcc_trap_rand", table.symbols[0x41].?);
+    try std.testing.expectEqualStrings("lc3_trap_seed", table.symbols[0x40].?);
+    try std.testing.expectEqualStrings("lc3_trap_rand", table.symbols[0x41].?);
     try std.testing.expect(table.sets.items[0].bundled);
 
     // the c++ set brings the platform c++ runtime flag and nothing else

@@ -10,7 +10,7 @@ use std::thread;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 #[repr(C)]
-pub struct LccTrapCtx {
+pub struct Lc3TrapCtx {
     pub memory: *mut u16,
     pub reg: *mut u16,
     pub pc: u16,
@@ -18,7 +18,7 @@ pub struct LccTrapCtx {
 }
 
 #[no_mangle]
-pub extern "C" fn lcc_trap_time(ctx: *mut LccTrapCtx) {
+pub extern "C" fn lc3_trap_time(ctx: *mut Lc3TrapCtx) {
     unsafe {
         let secs = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -31,7 +31,7 @@ pub extern "C" fn lcc_trap_time(ctx: *mut LccTrapCtx) {
 }
 
 #[no_mangle]
-pub extern "C" fn lcc_trap_sleep(ctx: *mut LccTrapCtx) {
+pub extern "C" fn lc3_trap_sleep(ctx: *mut Lc3TrapCtx) {
     unsafe {
         let ms = (*ctx).reg.add(0).read();
         thread::sleep(Duration::from_millis(ms as u64));

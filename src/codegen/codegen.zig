@@ -353,7 +353,7 @@ pub const CodeGen = struct {
         return cg.builder.buildFieldAddress(cg.ctx_type, cg.ctx_slot, field);
     }
 
-    /// declaration of a trap handler: void(lcc_trap_ctx*), inserted once
+    /// declaration of a trap handler: void(lc3_trap_ctx*), inserted once
     pub fn trapFunction(cg: *CodeGen, symbol: [:0]const u8) bindings.ValueRef {
         if (bindings.LLVMGetNamedFunction(cg.module.ref, symbol.ptr)) |existing| {
             return existing;

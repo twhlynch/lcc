@@ -2,7 +2,7 @@
 
 When you compile with `-dynamic`, the generated binary calls into `liblc3` at
 runtime for trap instructions. Each trap is a separate C function using the
-`lcc_trap_ctx` ABI (see `lcc -generate-traps-header`), so you can override traps
+`lc3_trap_ctx` ABI (see `lcc -generate-traps-header`), so you can override traps
 by providing your own implementation in a custom library.
 
 For per-build overrides and extensions, prefer `-traps`
@@ -21,7 +21,7 @@ cp src/runtime/lc3_runtime.c liblc3_custom.c
 Edit `liblc3_custom.c` and change `lc3_putn`:
 
 ```c
-void lc3_putn(lcc_trap_ctx *ctx)
+void lc3_putn(lc3_trap_ctx *ctx)
 {
     if (!at_newline)
     {

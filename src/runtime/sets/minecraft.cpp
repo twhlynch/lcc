@@ -19,13 +19,13 @@
 #include <cstdint>
 #include <string>
 
-#include "lcc_trap.h"
+#include "lc3_trap.h"
 
 #define BYTE_MASK 0xFF
 #define MEMORY_SIZE 65536
 
 // clang-format off
-LCC_LINK(-L/usr/local/lib, -lmcpp)
+LC3_LINK(-L/usr/local/lib, -lmcpp)
 // clang-format on
 
 namespace {
@@ -48,7 +48,7 @@ short word_to_coord(unsigned short word)
 
 } // namespace
 
-LCC_TRAP(0x28, chat)
+LC3_TRAP(0x28, chat)
 {
 	std::string message;
 	unsigned short address = ctx->reg[0];
@@ -65,7 +65,7 @@ LCC_TRAP(0x28, chat)
 	ensure_connection()->postToChat({message});
 }
 
-LCC_TRAP(0x29, getp)
+LC3_TRAP(0x29, getp)
 {
 	mcpp::Coordinate pos = ensure_connection()->getPlayerPosition();
 	ctx->reg[0] = static_cast<unsigned short>(pos.x);
@@ -73,7 +73,7 @@ LCC_TRAP(0x29, getp)
 	ctx->reg[2] = static_cast<unsigned short>(pos.z);
 }
 
-LCC_TRAP(0x2A, setp)
+LC3_TRAP(0x2A, setp)
 {
 	ensure_connection()->setPlayerPosition({
 		word_to_coord(ctx->reg[0]),
@@ -82,7 +82,7 @@ LCC_TRAP(0x2A, setp)
 	});
 }
 
-LCC_TRAP(0x2B, getb)
+LC3_TRAP(0x2B, getb)
 {
 	mcpp::Coordinate at = {
 		word_to_coord(ctx->reg[0]),
@@ -92,7 +92,7 @@ LCC_TRAP(0x2B, getb)
 	ctx->reg[3] = static_cast<unsigned short>(ensure_connection()->getBlock(at).id & BYTE_MASK);
 }
 
-LCC_TRAP(0x2C, setb)
+LC3_TRAP(0x2C, setb)
 {
 	mcpp::Coordinate at = {
 		word_to_coord(ctx->reg[0]),
@@ -102,7 +102,7 @@ LCC_TRAP(0x2C, setb)
 	ensure_connection()->setBlock(at, {static_cast<uint8_t>(ctx->reg[3] & BYTE_MASK), 0});
 }
 
-LCC_TRAP(0x2D, geth)
+LC3_TRAP(0x2D, geth)
 {
 	mcpp::Coordinate2D at = {
 		word_to_coord(ctx->reg[0]),

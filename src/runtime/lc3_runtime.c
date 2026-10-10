@@ -9,7 +9,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "lcc_trap.h"
+#include "lc3_trap.h"
 
 #if defined(__unix__) || defined(__APPLE__)
 #define LCC_POSIX 1
@@ -133,7 +133,7 @@ static void emit(unsigned char c)
 	at_newline = c == '\n';
 }
 
-void lc3_getc(lcc_trap_ctx *ctx)
+void lc3_getc(lc3_trap_ctx *ctx)
 {
 	int c = read_byte();
 	if (c == EOF)
@@ -143,13 +143,13 @@ void lc3_getc(lcc_trap_ctx *ctx)
 	ctx->reg[0] = (unsigned short)c;
 }
 
-void lc3_out(lcc_trap_ctx *ctx)
+void lc3_out(lc3_trap_ctx *ctx)
 {
 	emit(ctx->reg[0] & BYTE_MASK);
 	(void)fflush(stdout);
 }
 
-void lc3_puts(lcc_trap_ctx *ctx)
+void lc3_puts(lc3_trap_ctx *ctx)
 {
 	unsigned short address = ctx->reg[0];
 	for (int i = 0; i < MEMORY_SIZE; i++)
@@ -168,7 +168,7 @@ void lc3_puts(lcc_trap_ctx *ctx)
 	(void)fflush(stdout);
 }
 
-void lc3_in(lcc_trap_ctx *ctx)
+void lc3_in(lc3_trap_ctx *ctx)
 {
 	int c;
 
@@ -194,7 +194,7 @@ void lc3_in(lcc_trap_ctx *ctx)
 	ctx->reg[0] = (unsigned short)c;
 }
 
-void lc3_putsp(lcc_trap_ctx *ctx)
+void lc3_putsp(lc3_trap_ctx *ctx)
 {
 	unsigned short address = ctx->reg[0];
 	for (int i = 0; i < MEMORY_SIZE; i++)
@@ -216,21 +216,21 @@ void lc3_putsp(lcc_trap_ctx *ctx)
 	(void)fflush(stdout);
 }
 
-void lc3_halt(lcc_trap_ctx *ctx)
+void lc3_halt(lc3_trap_ctx *ctx)
 {
 	(void)ctx;
 	(void)fflush(stdout);
 	exit(0);
 }
 
-void lc3_putn(lcc_trap_ctx *ctx)
+void lc3_putn(lc3_trap_ctx *ctx)
 {
 	(void)printf("%u", (unsigned int)ctx->reg[0]);
 	(void)fflush(stdout);
 	at_newline = 0;
 }
 
-void lc3_reg(lcc_trap_ctx *ctx)
+void lc3_reg(lc3_trap_ctx *ctx)
 {
 	// clang-format off
 	static const char *const ascii[ASCII_LIMIT] = {

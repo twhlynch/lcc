@@ -20,22 +20,22 @@ lcc program.asm -traps terminal -traps time
 
 ## The trap ABI
 
-Every handler has the same signature, defined in `src/runtime/lcc_trap.h`:
+Every handler has the same signature, defined in `src/runtime/lc3_trap.h`:
 
 ```c
-typedef struct lcc_trap_ctx
+typedef struct lc3_trap_ctx
 {
     unsigned short *memory; /* 65536 word address space */
     unsigned short *reg;    /* R0-R7 */
     unsigned short pc;      /* PC of the next instruction */
     unsigned short *cc;     /* condition code value */
-} lcc_trap_ctx;
+} lc3_trap_ctx;
 ```
 
 lcc automatically includes this header while compiling your set, so the macros
 are always available even without including it yourself. A set may also include
-it explicitly with `#include "lcc_trap.h"` for LSP completion. To generate the
-header yourself (writes `lcc_trap.h` in the current directory):
+it explicitly with `#include "lc3_trap.h"` for LSP completion. To generate the
+header yourself (writes `lc3_trap.h` in the current directory):
 
 ```sh
 lcc -generate-traps-header
@@ -43,11 +43,11 @@ lcc -generate-traps-header
 
 ## Declaring a handler
 
-`LCC_TRAP(vect, alias)` expands to the handler's signature. The body follows as
+`LC3_TRAP(vect, alias)` expands to the handler's signature. The body follows as
 a normal function definition:
 
 ```c
-LCC_TRAP(0x30, foo)
+LC3_TRAP(0x30, foo)
 {
     ctx->reg[0] = 42;
 }
@@ -56,7 +56,7 @@ LCC_TRAP(0x30, foo)
 - `vect` is the trap vector integer in `0..255` (`0x30` in the example).
 - `alias` is the mnemonic used in assembly (`foo` in the example). It must be
   lowercase letters `a-z` onlys.
-- Keep each `LCC_TRAP(...)` invocation simple and on one line, lcc finds
+- Keep each `LC3_TRAP(...)` invocation simple and on one line, lcc finds
   declarations by scanning the source as is, so wrapped or broken lines won't be
   detected.
 
@@ -64,52 +64,52 @@ The example above makes `foo` a valid instruction:
 
 ```asm
 .ORIG x3000
-    foo ; calls lcc_trap_foo
+    foo ; calls lc3_trap_foo
     halt
 .END
 ```
 
 ## Link flags
 
-`LCC_LINK(...)` appends flags to the link command when the set is used:
+`LC3_LINK(...)` appends flags to the link command when the set is used:
 
 ```c
-LCC_LINK(-L/usr/local/lib, -lmcpp)
+LC3_LINK(-L/usr/local/lib, -lmcpp)
 ```
 
 One flag per comma-separated argument. The macro expands to nothing; lcc
-finds it by scanning, like `LCC_TRAP`. Bare file paths and relative `-L`
+finds it by scanning, like `LC3_TRAP`. Bare file paths and relative `-L`
 values resolve against the set file's own directory, so a stub can name an
 object that sits beside it no matter where lcc runs from. Other flags pass
 through untouched.
 
 lcc invokes `clang` (not `clang++`), so it appends the platform C++ runtime
 whenever a loaded set is C++ (`.cpp`, `.cc`, `.cxx`): `-lc++` on macOS,
-`-lstdc++` on Linux. If your `LCC_LINK` already names a runtime, lcc leaves
+`-lstdc++` on Linux. If your `LC3_LINK` already names a runtime, lcc leaves
 the flags alone.
 
 ## Compiled trap sets
 
 Handlers do not have to be written in C. All that matters is the ABI: an
-unmangled `lcc_trap_<alias>` symbol taking `lcc_trap_ctx *`, with the layout
+unmangled `lc3_trap_<alias>` symbol taking `lc3_trap_ctx *`, with the layout
 described in [The trap ABI](#the-trap-abi). Rust `staticlib`, Go `c-archive`,
 a Zig static library, anything that produces a static archive or object file.
 
 lcc still needs the vector and alias declarations to assemble the program, so a
-compiled set ships with a stub C declaration. `LCC_TRAP` lines written as
-prototypes with no body, and an `LCC_LINK` naming the library.
+compiled set ships with a stub C declaration. `LC3_TRAP` lines written as
+prototypes with no body, and an `LC3_LINK` naming the library.
 
 ```c
 /* mytraps.c declarations only */
-LCC_TRAP(0x30, foo);
-LCC_LINK(./libtraps.a)
+LC3_TRAP(0x30, foo);
+LC3_LINK(./libtraps.a)
 ```
 
 ```sh
 lcc program.asm -traps mytraps.c
 ```
 
-The stub compiles to an empty object while `LCC_LINK` passes the archive to the
+The stub compiles to an empty object while `LC3_LINK` passes the archive to the
 linker, which pulls in your handlers. Everything else works as usual: the stub
 participates in the collision and override rules exactly like a C set.
 
@@ -117,7 +117,7 @@ Example in Rust:
 
 ```rust
 #[repr(C)]
-pub struct LccTrapCtx {
+pub struct Lc3TrapCtx {
     pub memory: *mut u16,
     pub reg: *mut u16,
     pub pc: u16,
@@ -125,7 +125,7 @@ pub struct LccTrapCtx {
 }
 
 #[no_mangle]
-pub extern "C" fn lcc_trap_foo(ctx: *mut LccTrapCtx) {
+pub extern "C" fn lc3_trap_foo(ctx: *mut Lc3TrapCtx) {
     unsafe {
         (*ctx).reg.write(42);
     }
@@ -138,7 +138,7 @@ lcc program.asm -traps mytraps.c
 ```
 
 - Export handlers with C linkage (`extern "C"`, `#[no_mangle]`,
-  `-buildmode=c-archive`), and keep the struct layout identical to `lcc_trap.h`.
+  `-buildmode=c-archive`), and keep the struct layout identical to `lc3_trap.h`.
 - Static archives and objects link straight into the executable. Shared
   libraries link too, but the loader resolves a relative path against the
   working directory, so the program only runs from the directory holding the
@@ -151,7 +151,7 @@ lcc program.asm -traps mytraps.c
 A set may replace a standard trap by redeclaring it with the **same alias**:
 
 ```c
-LCC_TRAP(0x26, putn) /* same alias as standard putn */
+LC3_TRAP(0x26, putn) /* same alias as standard putn */
 {
     printf("0x%04X\n", ctx->reg[0]);
 }

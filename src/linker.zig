@@ -12,7 +12,7 @@ const candidate_dirs = [_][]const u8{
 
 /// links object_path and the C sources into output_path
 /// include_header is force-included while compiling those sources (the
-/// trap ABI header); extra_flags are appended after them (LCC_LINK)
+/// trap ABI header); extra_flags are appended after them (LC3_LINK)
 /// triple is passed to clang for cross compilation when given
 /// when dynamic, links against liblc3 instead of the runtime source
 pub fn link(
@@ -54,7 +54,7 @@ pub fn link(
     };
 
     // force-include the trap ABI header for every compiled source;
-    // -iquote lets sources name it explicitly as #include "lcc_trap.h"
+    // -iquote lets sources name it explicitly as #include "lc3_trap.h"
     if (sources.len > 0) {
         if (include_header) |header| {
             args.appendSlice(gpa, &.{ "-include", header }) catch {

@@ -9,11 +9,11 @@
  *   lcc examples/time.asm -traps examples/traps/time_rust.c
  */
 
-#include "lcc_trap.h"
+#include "lc3_trap.h"
 
-LCC_TRAP(0x30, time);
-LCC_TRAP(0x31, sleep);
+LC3_TRAP(0x30, time);
+LC3_TRAP(0x31, sleep);
 
 // clang-format off
-LCC_LINK(libtime_rust.a)
+LC3_LINK(libtime_rust.a)
 // clang-format on

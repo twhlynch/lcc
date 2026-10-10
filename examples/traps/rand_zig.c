@@ -9,11 +9,11 @@
  *   lcc examples/rand.asm -traps examples/traps/rand_zig.c
  */
 
-#include "lcc_trap.h"
+#include "lc3_trap.h"
 
-LCC_TRAP(0x40, seed);
-LCC_TRAP(0x41, rand);
+LC3_TRAP(0x40, seed);
+LC3_TRAP(0x41, rand);
 
 // clang-format off
-LCC_LINK(rand_zig.o)
+LC3_LINK(rand_zig.o)
 // clang-format on

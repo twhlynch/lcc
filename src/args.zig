@@ -17,7 +17,7 @@ pub const usage =
     \\  -generate-liblc3        Generate liblc3 shared library
     \\
     \\  -T, -traps <name|file>  Load a set: bundled name or source file (repeatable)
-    \\  -generate-traps-header  Generate lcc_trap.h
+    \\  -generate-traps-header  Generate lc3_trap.h
     \\
     \\  -v, --version           Print version information
     \\  -h, --help              Show this help

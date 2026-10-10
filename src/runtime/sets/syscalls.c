@@ -36,7 +36,7 @@
 #include <stdio.h>
 #include <unistd.h>
 
-#include "lcc_trap.h"
+#include "lc3_trap.h"
 
 #define BYTE_MASK 0xFF
 #define WORD_MASK 0xFFFF
@@ -46,21 +46,21 @@
 #define WORD_SHIFT 16
 
 /* records a successful call: result in R0, positive condition codes */
-static void pass(lcc_trap_ctx *ctx, unsigned short result)
+static void pass(lc3_trap_ctx *ctx, unsigned short result)
 {
 	ctx->reg[0] = result;
 	*ctx->cc = 1;
 }
 
 /* records a failed call: -1 in R0, negative condition codes */
-static void fail(lcc_trap_ctx *ctx)
+static void fail(lc3_trap_ctx *ctx)
 {
 	ctx->reg[0] = (unsigned short)-1;
 	*ctx->cc = (unsigned short)-1;
 }
 
 /* copies a null terminated string out of memory, low byte per word */
-static int fetch_path(const lcc_trap_ctx *ctx, unsigned short addr, char *out)
+static int fetch_path(const lc3_trap_ctx *ctx, unsigned short addr, char *out)
 {
 	for (unsigned long i = 0; i < PATH_CAP; i++)
 	{
@@ -75,7 +75,7 @@ static int fetch_path(const lcc_trap_ctx *ctx, unsigned short addr, char *out)
 }
 
 /* reads up to count bytes from fd into memory, one byte per word */
-static int fetch_bytes(const lcc_trap_ctx *ctx, int fd, unsigned short addr, unsigned short count)
+static int fetch_bytes(const lc3_trap_ctx *ctx, int fd, unsigned short addr, unsigned short count)
 {
 	char buf[IO_CHUNK];
 	unsigned short done = 0;
@@ -109,7 +109,7 @@ static int fetch_bytes(const lcc_trap_ctx *ctx, int fd, unsigned short addr, uns
 }
 
 /* writes count bytes from memory, one byte per word, to fd */
-static int put_bytes(const lcc_trap_ctx *ctx, int fd, unsigned short addr, unsigned short count)
+static int put_bytes(const lc3_trap_ctx *ctx, int fd, unsigned short addr, unsigned short count)
 {
 	char buf[IO_CHUNK];
 	unsigned short sent = 0;
@@ -138,7 +138,7 @@ static int put_bytes(const lcc_trap_ctx *ctx, int fd, unsigned short addr, unsig
 	return (int)sent;
 }
 
-LCC_TRAP(0x50, open)
+LC3_TRAP(0x50, open)
 {
 	char path[PATH_CAP];
 	if (fetch_path(ctx, ctx->reg[0], path) != 0)
@@ -173,7 +173,7 @@ LCC_TRAP(0x50, open)
 	pass(ctx, (unsigned short)fd);
 }
 
-LCC_TRAP(0x51, close)
+LC3_TRAP(0x51, close)
 {
 	if (close((int)ctx->reg[0]) < 0)
 	{
@@ -183,7 +183,7 @@ LCC_TRAP(0x51, close)
 	pass(ctx, 0);
 }
 
-LCC_TRAP(0x52, read)
+LC3_TRAP(0x52, read)
 {
 	int done = fetch_bytes(ctx, (int)ctx->reg[0], ctx->reg[1], ctx->reg[2]);
 	if (done < 0)
@@ -194,7 +194,7 @@ LCC_TRAP(0x52, read)
 	pass(ctx, (unsigned short)done);
 }
 
-LCC_TRAP(0x53, write)
+LC3_TRAP(0x53, write)
 {
 	int sent = put_bytes(ctx, (int)ctx->reg[0], ctx->reg[1], ctx->reg[2]);
 	if (sent < 0)
@@ -205,7 +205,7 @@ LCC_TRAP(0x53, write)
 	pass(ctx, (unsigned short)sent);
 }
 
-LCC_TRAP(0x54, seek)
+LC3_TRAP(0x54, seek)
 {
 	int whence;
 	switch (ctx->reg[3])
@@ -235,7 +235,7 @@ LCC_TRAP(0x54, seek)
 	pass(ctx, (unsigned short)((uint64_t)at & WORD_MASK));
 }
 
-LCC_TRAP(0x55, size)
+LC3_TRAP(0x55, size)
 {
 	struct stat info;
 	if (fstat((int)ctx->reg[0], &info) != 0)
@@ -247,7 +247,7 @@ LCC_TRAP(0x55, size)
 	pass(ctx, (unsigned short)((uint64_t)info.st_size & WORD_MASK));
 }
 
-LCC_TRAP(0x56, remove)
+LC3_TRAP(0x56, remove)
 {
 	char path[PATH_CAP];
 	if (fetch_path(ctx, ctx->reg[0], path) != 0)

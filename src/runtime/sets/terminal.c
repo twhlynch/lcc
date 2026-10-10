@@ -40,10 +40,10 @@
 #include <stdlib.h>
 #include <unistd.h>
 
-#include "lcc_trap.h"
+#include "lc3_trap.h"
 
 /* the runtime's getc shared argv-first input stream */
-extern void lc3_getc(lcc_trap_ctx *ctx);
+extern void lc3_getc(lc3_trap_ctx *ctx);
 
 #define ESC_CHAR 0x1B
 #define KEY_UP 0x100
@@ -139,7 +139,7 @@ static void arm_restore_screen(void)
 }
 
 /* next byte from the read ahead slot or the runtime's input stream */
-static int take_byte(lcc_trap_ctx *ctx)
+static int take_byte(lc3_trap_ctx *ctx)
 {
 	if (pending_byte >= 0)
 	{
@@ -166,7 +166,7 @@ static int normalize(int c)
 }
 
 /* decodes one ESC [ sequence: a key code, or -1 when unknown */
-static int read_csi(lcc_trap_ctx *ctx)
+static int read_csi(lc3_trap_ctx *ctx)
 {
 	int c = take_byte(ctx);
 	if (c == 'A')
@@ -206,38 +206,38 @@ static int read_csi(lcc_trap_ctx *ctx)
 	return -1;
 }
 
-LCC_TRAP(0x40, clear)
+LC3_TRAP(0x40, clear)
 {
 	(void)ctx;
 	sequence("\x1b[2J");
 }
 
-LCC_TRAP(0x41, home)
+LC3_TRAP(0x41, home)
 {
 	(void)ctx;
 	sequence("\x1b[1;1H");
 }
 
-LCC_TRAP(0x42, goto)
+LC3_TRAP(0x42, goto)
 {
 	char cell[CURSOR_SEQUENCE_CAP];
 	(void)snprintf(cell, sizeof(cell), "\x1b[%u;%uH", (unsigned int)ctx->reg[0], (unsigned int)ctx->reg[1]);
 	sequence(cell);
 }
 
-LCC_TRAP(0x43, alt)
+LC3_TRAP(0x43, alt)
 {
 	arm_restore_screen();
 	sequence(ctx->reg[0] == 0 ? "\x1b[?1049h" : "\x1b[?1049l");
 }
 
-LCC_TRAP(0x44, cur)
+LC3_TRAP(0x44, cur)
 {
 	arm_restore_screen();
 	sequence(ctx->reg[0] == 0 ? "\x1b[?25l" : "\x1b[?25h");
 }
 
-LCC_TRAP(0x45, key)
+LC3_TRAP(0x45, key)
 {
 	for (;;)
 	{
@@ -269,7 +269,7 @@ LCC_TRAP(0x45, key)
 	}
 }
 
-LCC_TRAP(0x46, poll)
+LC3_TRAP(0x46, poll)
 {
 	// a byte key read ahead is already in hand, hand it over
 	if (pending_byte >= 0)

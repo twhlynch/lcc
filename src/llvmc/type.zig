@@ -29,7 +29,7 @@ pub fn void_(context: Context) bindings.TypeRef {
     return bindings.LLVMVoidTypeInContext(context.ref);
 }
 
-/// {ptr, ptr, i16, ptr}, matching lcc_trap_ctx in runtime/lcc_trap.h
+/// {ptr, ptr, i16, ptr}, matching lc3_trap_ctx in runtime/lc3_trap.h
 /// layout follows the platform's natural alignment, like the C struct
 pub fn trapContext(context: Context) bindings.TypeRef {
     const fields = [_]bindings.TypeRef{

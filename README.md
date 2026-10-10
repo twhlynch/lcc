@@ -52,7 +52,7 @@ standard. See [docs/behaviour.md](docs/behaviour.md).
 | `-L<dir>`                   | Directory to search for liblc3            |
 | `-generate-liblc3`          | Generate liblc3 shared library            |
 | `-T`, `-traps <name\|file>` | Load a set by name or source file         |
-| `-generate-traps-header`    | Generate lcc_trap.h                       |
+| `-generate-traps-header`    | Generate lc3_trap.h                       |
 | `-v`, `--version`           | Print version information                 |
 | `-h`, `--help`              | Print usage help                          |
 
