@@ -1,8 +1,8 @@
 /*
- * seed and rand trap set for lcc (x40-x41)
+ * seed and rand trap set for lcc (x3A-x3B)
  *
- *   x40 seed R0 = seed for the generator
- *   x41 rand R0 = next pseudo random 16 bits
+ *   x3A seed R0 = seed for the generator
+ *   x3B rand R0 = next pseudo random 16 bits
  */
 
 #include <random>
