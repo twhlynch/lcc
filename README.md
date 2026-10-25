@@ -127,7 +127,7 @@ Trap semantics follow ELK's emulator. `putn` and `reg` are debug extensions.
 ### Trap sets
 
 Extra trap extensions or 'sets' can be loaded with `-traps`: the bundled sets
-(`minecraft`, `rand`, `syscalls`, `terminal`, `time`) by name, any other set as a
+(`minecraft`, `rand`, `syscalls`, `terminal`, `time`, `turtle`) by name, any other set as a
 path to a C/C++ source file. Implementations can also be prebuilt static
 libraries in any language, paired with a small declarations stub:
 
