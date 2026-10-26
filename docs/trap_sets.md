@@ -257,6 +257,36 @@ next byte, `-1` when stdin has none, and `0` at end of input instead of
 exiting, so a program can run between keypresses. It should not be
 mixed with `key`/`getc`, which do not share its buffer.
 
+## The time set
+
+`src/runtime/sets/time.cpp` provides the clock traps `x30`-`x31`:
+
+```sh
+lcc program.asm -traps time
+```
+
+| Trap    | Vector | Input             | Output                     |
+| ------- | ------ | ----------------- | -------------------------- |
+| `time`  | `x30`  | -                 | R0/R1 = Unix time, seconds |
+| `sleep` | `x31`  | R0 = milliseconds | -                          |
+
+- `time` splits the count over two registers because seconds since the epoch
+  no longer fit in one word: R0 is the low word, R1 the high word.
+- `sleep` blocks the program for the given number of milliseconds.
+
+## The rand set
+
+`src/runtime/sets/rand.cpp` provides a pseudo random generator on `x3A`-`x3B`,
+backed by `std::mt19937`:
+
+```sh
+lcc program.asm -traps rand
+```
+
+| Trap   | Vector | Input     | Output                    |
+| ------ | ------ | --------- | ------------------------- |
+| `seed` | `x3A`  | R0 = seed | -                         |
+| `rand` | `x3B`  | -         | R0 = pseudo random number |
 
 ## The turtle set
 
