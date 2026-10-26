@@ -33,4 +33,4 @@ jobs:
           emulate: "%o"
           extensions: "true"
           timeout: "30"
-          suppress: "14"
+          suppress: "20"
