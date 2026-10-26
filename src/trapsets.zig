@@ -29,6 +29,7 @@ const bundled = [_]BundledSet{
     .{ .name = "syscalls", .ext = ".c", .source = @embedFile("runtime/sets/syscalls.c") },
     .{ .name = "terminal", .ext = ".c", .source = @embedFile("runtime/sets/terminal.c") },
     .{ .name = "time", .ext = ".cpp", .source = @embedFile("runtime/sets/time.cpp") },
+    .{ .name = "turtle", .ext = ".c", .source = @embedFile("runtime/sets/turtle.c") },
 };
 
 /// the bundled set matching name, or null when it is not one

@@ -11,8 +11,8 @@ lcc program.asm -T terminal              # shorthand for -traps
 ```
 
 A few sets are compiled into lcc itself and can be selected by name. The bundled
-sets are `minecraft`, `rand`, `syscalls`, `terminal`, and `time`. Any other value
-is read as a `.c`/`.cpp` source.
+sets are `minecraft`, `rand`, `syscalls`, `terminal`, `time`, and `turtle`. Any
+other value is read as a `.c`/`.cpp` source.
 
 ```sh
 lcc program.asm -traps terminal -traps time
@@ -256,3 +256,61 @@ Key codes:
 next byte, `-1` when stdin has none, and `0` at end of input instead of
 exiting, so a program can run between keypresses. It should not be
 mixed with `key`/`getc`, which do not share its buffer.
+
+## The time set
+
+`src/runtime/sets/time.cpp` provides the clock traps `x30`-`x31`:
+
+```sh
+lcc program.asm -traps time
+```
+
+| Trap    | Vector | Input             | Output                     |
+| ------- | ------ | ----------------- | -------------------------- |
+| `time`  | `x30`  | -                 | R0/R1 = Unix time, seconds |
+| `sleep` | `x31`  | R0 = milliseconds | -                          |
+
+- `time` splits the count over two registers because seconds since the epoch
+  no longer fit in one word: R0 is the low word, R1 the high word.
+- `sleep` blocks the program for the given number of milliseconds.
+
+## The rand set
+
+`src/runtime/sets/rand.cpp` provides a pseudo random generator on `x3A`-`x3B`,
+backed by `std::mt19937`:
+
+```sh
+lcc program.asm -traps rand
+```
+
+| Trap   | Vector | Input     | Output                    |
+| ------ | ------ | --------- | ------------------------- |
+| `seed` | `x3A`  | R0 = seed | -                         |
+| `rand` | `x3B`  | -         | R0 = pseudo random number |
+
+## The turtle set
+
+`src/runtime/sets/turtle.c` provides traps `x60`-`x66`, a basic version of
+Turtle Graphics drawing onto a character grid in ANSI colours:
+
+```sh
+lcc program.asm -traps turtle
+```
+
+| Trap    | Vector | Input                   | Output                  |
+| ------- | ------ | ----------------------- | ----------------------- |
+| `move`  | `x60`  | R0 = signed distance    | -                       |
+| `turn`  | `x61`  | R0 = signed degrees     | -                       |
+| `pen`   | `x62`  | R0 = 0 up, nonzero down | -                       |
+| `color` | `x63`  | R0 = color index 0-15   | -                       |
+| `width` | `x64`  | R0 = stroke width       | -                       |
+| `dims`  | `x65`  | -                       | R0 = columns, R1 = rows |
+| `jump`  | `x66`  | R0 = column, R1 = row   | -                       |
+
+- The turtle starts at the centre of the grid, facing right, with the pen down.
+  Positive turns rotate counterclockwise and negative distances move backwards.
+- `move` takes a relative movement, `jump` takes an absolute location.
+- The logical grid is 2 colums per locigal cell to appear square on a terminal.
+- `dims` returns the area of the grid the turtle clips to.
+- `color` masks the index to 0-15: 0-7 are the normal ANSI colours and 8-15
+  their bright versions.
