@@ -491,6 +491,41 @@ test "fall-through follows origin order, not argument order" {
     try std.testing.expectEqualStrings("ACB\n", run.stdout);
 }
 
+test "labels past the end of the image read as zero" {
+    requireLcc(std.testing.io);
+    try ensureTestDir(std.testing.io);
+    const io = std.testing.io;
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    // End labels an address one past the last word; ld/st/lea to it
+    // reach zero-initialised memory, which is valid on real hardware
+    const src = test_dir ++ "/end_label.asm";
+    try writeFixture(io, src,
+        \\.ORIG x3000
+        \\    ld r0, End
+        \\    add r0, r0, #7
+        \\    st r0, End
+        \\    ld r0, End
+        \\
+        \\End
+        \\
+        \\.END
+        \\
+    );
+
+    var out_buf: [128]u8 = undefined;
+    const out = try outPath(&out_buf, "end_label");
+    const compile = try runLcc(alloc, io, &.{ lcc_exe, "-o", out, src });
+    defer cleanup(io, .{ .files = &.{ src, out } });
+    try std.testing.expectEqual(@as(u8, 0), compile.code);
+
+    // the store past the end lands in memory and reads back as 7
+    const run = try execWithStdin(alloc, io, &.{out}, "");
+    try std.testing.expectEqual(@as(u8, 7), run.exit);
+}
+
 test "dynamic linking produces identical output" {
     requireLcc(std.testing.io);
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
