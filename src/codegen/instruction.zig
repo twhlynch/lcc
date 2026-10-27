@@ -207,18 +207,27 @@ fn resolvedTarget(
 }
 
 /// absolute LC-3 address of a resolved PC-relative operand
+/// data references may target any address in the 64K memory image, so
+/// a label at or past the end of the program (reading as zero) is fine
 fn resolvedAddress(
     cg: *CodeGen,
     operand: anytype,
     index: usize,
 ) codegen.Error!llvm.bindings.ValueRef {
-    return absoluteAddress(cg, try resolvedTarget(cg, operand, index));
+    return switch (operand.value) {
+        .resolved => |formed| absoluteAddress(cg, index, formed.integer),
+        .unresolved => blk: {
+            std.log.err("unresolved label reference at x{X}", .{@as(u64, cg.addressOf(index))});
+            break :blk error.InvalidTarget;
+        },
+    };
 }
 
-/// absolute LC-3 address of a word index
-fn absoluteAddress(cg: *CodeGen, target_index: usize) llvm.bindings.ValueRef {
+/// absolute LC-3 address of a PC-relative offset, wrapping like the hardware
+fn absoluteAddress(cg: *CodeGen, index: usize, offset: i64) llvm.bindings.ValueRef {
+    const pc = cg.addressOf(index) +% 1;
     return llvm.value.constInt(
         cg.word_type,
-        @intCast(cg.addressOf(target_index)),
+        pc +% @as(u16, @bitCast(@as(i16, @intCast(offset)))),
     );
 }

@@ -372,7 +372,9 @@ pub const CodeGen = struct {
         _ = cg.builder.buildBr(cg.dispatch_block);
     }
 
-    /// maps a PC-relative transfer onto its global block
+    /// maps a PC-relative control transfer onto its global block; data
+    /// references do not come through here because any address in the
+    /// 64K memory image is valid for them, mapped or not
     pub fn branchTargetIndex(cg: *CodeGen, index: usize, offset: i64) Error!usize {
         const pc = @as(i64, cg.addresses[index]) + 1;
         const target = pc + offset;
