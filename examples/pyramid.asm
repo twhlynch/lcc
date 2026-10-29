@@ -5,11 +5,11 @@
     lea r0, Prompt
     puts                    ; ask for the height
 
-Read
+ReadLoop
     getc                    ; read one character without echo
     ld r4, NNewline
     add r4, r0, r4          ; c - '\n'
-    brz Read                ; ignore newlines
+    brz ReadLoop            ; ignore newlines
 
     ld r3, NZero
     add r3, r0, r3          ; c - '0', negative when below '0'
@@ -67,7 +67,7 @@ Bad
     out
     lea r0, Prompt
     puts
-    brnzp Read
+    brnzp ReadLoop
 
 NZero    .FILL #-48          ; -'0'
 NColon   .FILL #-58          ; -':'

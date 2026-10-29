@@ -1,20 +1,25 @@
 .ORIG x3000
 
-    ld r0, sval
+    ld r0, SeedValue
     seed
+
     rand
     putn
-    ld r0, nl
+
+    ld r0, Nl
     out
+
     rand
     putn
-    ld r0, nl
+    ld r0, Nl
     out
+
     rand
     putn
+
     halt
 
-sval .FILL #42
-nl  .FILL #10
+SeedValue .FILL #42
+Nl        .FILL xA
 
 .END

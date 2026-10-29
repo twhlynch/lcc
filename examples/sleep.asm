@@ -1,9 +1,10 @@
 .ORIG x3000
 
-    ld r0, ms
+    ld r0, MS
     sleep
+
     halt
 
-ms  .FILL #300
+MS .FILL #300
 
 .END
