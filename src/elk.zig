@@ -9,7 +9,7 @@ pub const Instruction = Air.Instruction;
 pub const Source = elk.Source;
 pub const Traps = elk.Traps;
 pub const Policies = elk.Policies;
-pub const reporting = elk.reporting;
+pub const Reporter = elk.Reporter;
 
 /// standard + debug traps (putn, reg)
 pub const standard_traps: Traps = .registerSets(&.{
@@ -26,7 +26,7 @@ pub fn assemble(
     source: Source,
     traps: *const Traps,
     policies: Policies,
-    reporter: *reporting.Primary,
+    reporter: *Reporter,
 ) (error{ AssemblyFailed, OutOfMemory })!Air {
     reporter.options.policies = policies;
 

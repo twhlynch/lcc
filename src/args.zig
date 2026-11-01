@@ -124,7 +124,7 @@ fn parseOptimize(dest: *anyopaque, src: []const u8, _: std.mem.Allocator) !void 
     if (std.mem.eql(u8, src, "none")) {
         optimize.* = .none;
     } else if (src.len == 1 and src[0] >= '0' and src[0] <= '3') {
-        optimize.* = @enumFromInt(src[0] - '0' + 1);
+        optimize.* = @fromBackingInt(@intCast(src[0] - '0' + 1));
     } else {
         return error.InvalidValue;
     }

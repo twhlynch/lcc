@@ -116,11 +116,6 @@ pub fn lower(cg: *CodeGen, instruction: elk.Instruction, index: usize) codegen.E
             std.log.warn("rti instruction at x{X} treated as nop", .{cg.addressOf(index)});
             return false;
         },
-
-        inline else => |_, tag| {
-            std.log.err("instruction not supported yet: {s}", .{@tagName(tag)});
-            return error.UnsupportedInstruction;
-        },
     }
 }
 
@@ -157,7 +152,7 @@ fn br(
     dest: anytype,
     index: usize,
 ) codegen.Error!bool {
-    const bits = @intFromEnum(mask);
+    const bits = @backingInt(mask);
     if (bits == 0) {
         return false;
     }

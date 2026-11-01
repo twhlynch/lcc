@@ -16,8 +16,8 @@ test {
 const Diagnostics = struct {
     stderr_buffer: [1024]u8 = undefined,
     stderr_writer: std.Io.File.Writer = undefined,
-    fancy_sink: elk.reporting.Sink.Fancy = undefined,
-    reporter: elk.reporting.Primary = undefined,
+    fancy_sink: elk.Reporter.Sink.Fancy = undefined,
+    reporter: elk.Reporter = undefined,
 
     fn init(diags: *Diagnostics, io: std.Io, quiet: bool) void {
         diags.stderr_writer = std.Io.File.stderr().writer(io, &diags.stderr_buffer);

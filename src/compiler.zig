@@ -22,7 +22,7 @@ pub const Segment = struct {
         // source.text and the file buffer are the same allocation
         gpa.free(seg.source.text);
         if (seg.source.path) |path| {
-            gpa.free(path);
+            gpa.free(path.display);
         }
     }
 };
@@ -39,7 +39,7 @@ pub const Program = struct {
 
     pub fn mainPath(program: *const Program) ?[]const u8 {
         if (program.segments.len == 0) return null;
-        return program.segments[0].source.path;
+        return if (program.segments[0].source.path) |path| path.display else null;
     }
 
     pub fn totalWords(program: *const Program) usize {
@@ -68,7 +68,7 @@ pub fn assembleFiles(
     gpa: std.mem.Allocator,
     paths: []const []const u8,
     traps: *const elk.Traps,
-    reporter: *elk.reporting.Primary,
+    reporter: *elk.Reporter,
 ) Error!Program {
     if (paths.len == 0) {
         std.log.err("no input files", .{});
@@ -83,7 +83,7 @@ pub fn assembleFiles(
 
     // each input claims its address range as it is assembled so a
     // collision fails before later files are even read
-    var used = std.StaticBitSet(65536).initEmpty();
+    var used = std.StaticBitSet(65536).empty;
     for (paths) |path| {
         var seg = assembleOne(io, gpa, path, traps, reporter) catch |err| switch (err) {
             error.FileNotFound => {
@@ -106,7 +106,7 @@ fn assembleOne(
     gpa: std.mem.Allocator,
     path: []const u8,
     traps: *const elk.Traps,
-    reporter: *elk.reporting.Primary,
+    reporter: *elk.Reporter,
 ) Error!Segment {
     var path_buffer: [std.fs.max_path_bytes]u8 = undefined;
     const length = try std.Io.Dir.cwd().realPathFile(io, path, &path_buffer);
@@ -124,7 +124,10 @@ fn assembleOne(
     const owned_path = try gpa.dupe(u8, resolved_path);
     errdefer gpa.free(owned_path);
 
-    const source: elk.Source = .{ .text = text, .path = owned_path };
+    const source: elk.Source = .{
+        .text = text,
+        .path = .{ .original = path, .display = owned_path },
+    };
     reporter.source = source;
 
     var air = try elk.assemble(
@@ -160,7 +163,7 @@ fn claim(
         if (used.isSet(addr)) {
             std.log.err("address x{X:04} in {s} already loaded by {s}", .{
                 addr,
-                seg.source.path orelse "?",
+                if (seg.source.path) |path| path.display else "?",
                 ownerOf(earlier, addr) orelse "an earlier input",
             });
             return error.AssemblyFailed;
@@ -174,7 +177,7 @@ fn ownerOf(earlier: []const Segment, addr: usize) ?[]const u8 {
     for (earlier) |seg| {
         const origin: usize = seg.air.origin;
         if (addr >= origin and addr < origin + seg.air.lines.items.len) {
-            return seg.source.path;
+            return if (seg.source.path) |path| path.display else null;
         }
     }
     return null;
@@ -258,7 +261,7 @@ pub fn compileAndLink(
     defer output.deinit();
 
     var machine = if (triple) |t| blk: {
-        const triple_z = try gpa.dupeZ(u8, t);
+        const triple_z = try gpa.dupeSentinel(u8, t, 0);
         defer gpa.free(triple_z);
         break :blk try llvm.target.TargetMachine.create(triple_z, codeGenLevel(level));
     } else blk: {
