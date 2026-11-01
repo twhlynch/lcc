@@ -5,10 +5,10 @@ RUN apt-get update && apt-get install -y \
     curl xz-utils llvm-dev clang git \
     && rm -rf /var/lib/apt/lists/*
 
-# install zig 0.16
+# install zig 0.17
 RUN ZIG_ARCH=$(uname -m) && \
-    curl -L https://ziglang.org/download/0.16.0/zig-${ZIG_ARCH}-linux-0.16.0.tar.xz | tar -xJ -C /usr/local && \
-    ln -s /usr/local/zig-${ZIG_ARCH}-linux-0.16.0/zig /usr/local/bin/zig
+    curl -L https://ziglang.org/download/0.17.0/zig-${ZIG_ARCH}-linux-0.17.0.tar.xz | tar -xJ -C /usr/local && \
+    ln -s /usr/local/zig-${ZIG_ARCH}-linux-0.17.0/zig /usr/local/bin/zig
 
 WORKDIR /src
 COPY . .

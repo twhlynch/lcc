@@ -141,7 +141,7 @@ See [docs/trap_sets.md](docs/trap_sets.md) for full usage.
 
 Requires:
 
-- Zig 0.16.x
+- Zig 0.17.x
 - LLVM 15+ (shared library, discovered via `llvm-config`)
 - `clang` on `PATH` (for linking)
 
