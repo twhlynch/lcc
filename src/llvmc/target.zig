@@ -38,7 +38,7 @@ pub const TargetMachine = struct {
         );
 
         // keep an owned copy; the caller frees the original triple.
-        const triple_copy: [:0]u8 = std.heap.c_allocator.dupeZ(u8, std.mem.span(triple)) catch {
+        const triple_copy: [:0]u8 = std.heap.c_allocator.dupeSentinel(u8, std.mem.span(triple), 0) catch {
             bindings.LLVMDisposeTargetMachine(ref);
             return error.OutOfMemory;
         };
@@ -136,10 +136,11 @@ fn initializeTargetFor(triple: []const u8) void {
 
     for (suffixes) |suffix| {
         var buffer: [64]u8 = undefined;
-        const symbol = std.fmt.bufPrintZ(
+        const symbol = std.fmt.bufPrintSentinel(
             &buffer,
             "LLVMInitialize{s}{s}",
             .{ backend_name, suffix },
+            0,
         ) catch unreachable;
 
         const init_fn: ?*const fn () callconv(.c) void = @ptrCast(@alignCast(std.c.dlsym(handle, symbol.ptr)));

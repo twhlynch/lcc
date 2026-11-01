@@ -3,16 +3,16 @@
     .version = "0.8.0",
     .fingerprint = 0x24e7e3d0067bc15d,
 
-    .minimum_zig_version = "0.16.0",
+    .minimum_zig_version = "0.17.0",
 
     .dependencies = .{
         .elk = .{
-            .url = "git+https://codeberg.org/dxrcy/elk?ref=v0.1.10#b3c6641ea14e52dd6de997a0e3fb2577d5cb13b9",
-            .hash = "elk-0.1.10-_Fml5PP4BABLPCSf525Ec8Z-LV6-3gg5RnEZsDKO85wh",
+            .url = "git+https://codeberg.org/dxrcy/elk#6ca138b3237222fccb899da4debf1b040807dd9a",
+            .hash = "elk-0.1.11-_Fml5NqBBQCQRfBKAQnu1nn4_vI-XZXsbVEvxJdd_Hni",
         },
         .zilc = .{
-            .url = "git+https://codeberg.org/dxrcy/zilc#37ed2e03879727315a517fbfcac59e3814dc34e5",
-            .hash = "zilc-0.1.0-a-peQcthAACzQCzrBUI8-rw_sZJuVikEhs6Rtiz7iH96",
+            .url = "git+https://codeberg.org/dxrcy/zilc#14a3f04bcfc5637851cf414efad9e0f42513c910",
+            .hash = "zilc-0.1.3-a-peQQ9oAAA5IycY4QhEj5gTHGznO1X0LxQsegL9gocu",
         },
     },
 

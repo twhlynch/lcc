@@ -230,7 +230,7 @@ pub const CodeGen = struct {
 
         for (0..line_count) |i| {
             var name_buffer: [16]u8 = undefined;
-            const name = std.fmt.bufPrintZ(&name_buffer, "w{d}", .{i}) catch unreachable;
+            const name = std.fmt.bufPrintSentinel(&name_buffer, "w{d}", .{i}, 0) catch unreachable;
             cg.blocks[i] = bindings.LLVMAppendBasicBlockInContext(context.ref, main_fn, name.ptr);
         }
         cg.blocks[line_count] = bindings.LLVMAppendBasicBlockInContext(context.ref, main_fn, "exit");
